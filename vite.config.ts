@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/GoldenTimeAED/',
+  base: '/',
   server: {
     proxy: {
       // 로컬 개발 시: /api/aed → 안전데이터포털 (CORS 우회)

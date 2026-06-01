@@ -1,16 +1,10 @@
 import axios from 'axios';
 import type { AEDApiItem, AEDApiResponse, AEDItem } from '../types/aed';
 
-const AED_API_PATH = '/V2/api/DSSP-IF-00068';
-const AED_API_BASE = `https://www.safetydata.go.kr${AED_API_PATH}`;
-
-// 개발 환경: Vite dev server 프록시 (/api/aed → safetydata.go.kr)
-// 프로덕션: CORS 프록시 순서대로 fallback
-const CORS_PROXIES = [
-  (url: string) => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
-  (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  (url: string) => `https://thingproxy.freeboard.io/fetch/${url}`,
-];
+// 로컬(DEV): Vite 프록시 → safetydata.go.kr
+// 프로덕션(Cloudflare Pages): Pages Function → safetydata.go.kr
+// 두 환경 모두 /api/aed 경로를 사용하므로 분기 불필요
+const AED_PROXY_PATH = '/api/aed';
 
 function buildQueryString(apiKey: string): string {
   return new URLSearchParams({
@@ -42,44 +36,16 @@ function toAEDItem(raw: AEDApiItem, index: number): AEDItem | null {
   };
 }
 
-async function fetchWithFallback(apiKey: string): Promise<AEDApiResponse> {
-  const qs = buildQueryString(apiKey);
-
-  // ── 개발 환경: Vite 내장 프록시 사용 (CORS 완전 우회) ──
-  if (import.meta.env.DEV) {
-    const res = await axios.get<AEDApiResponse>(`/api/aed?${qs}`, { timeout: 10000 });
-    return res.data;
-  }
-
-  // ── 프로덕션: 직접 호출 → CORS 프록시 순서대로 fallback ──
-  const directUrl = `${AED_API_BASE}?${qs}`;
-
-  try {
-    const res = await axios.get<AEDApiResponse>(directUrl, { timeout: 8000 });
-    return res.data;
-  } catch {
-    // CORS 또는 네트워크 오류 → 프록시 시도
-  }
-
-  let lastError: unknown;
-  for (const makeProxy of CORS_PROXIES) {
-    try {
-      const res = await axios.get<AEDApiResponse>(makeProxy(directUrl), { timeout: 15000 });
-      return res.data;
-    } catch (err) {
-      lastError = err;
-    }
-  }
-
-  throw lastError ?? new Error('AED API 호출 실패');
-}
-
 export async function fetchAEDList(): Promise<AEDItem[]> {
   const apiKey = import.meta.env.VITE_AED_API_KEY as string;
   if (!apiKey) throw new Error('AED API 키가 설정되지 않았습니다. .env 파일을 확인해주세요.');
 
-  const data = await fetchWithFallback(apiKey);
+  const qs = buildQueryString(apiKey);
+  const res = await axios.get<AEDApiResponse>(`${AED_PROXY_PATH}?${qs}`, {
+    timeout: 10000,
+  });
 
+  const data = res.data;
   if (data.header?.resultCode !== '00') {
     throw new Error(`AED API 오류: ${data.header?.resultMsg}`);
   }
