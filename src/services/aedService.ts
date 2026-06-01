@@ -2,7 +2,12 @@ import axios from 'axios';
 import type { AEDApiItem, AEDApiResponse, AEDItem } from '../types/aed';
 
 const AED_API_BASE = 'https://www.safetydata.go.kr/V2/api/DSSP-IF-10941';
-const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+
+// CORS 프록시 목록 (순서대로 fallback 시도)
+const CORS_PROXIES = [
+  (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+];
 
 function buildApiUrl(apiKey: string): string {
   const params = new URLSearchParams({
@@ -38,15 +43,26 @@ function toAEDItem(raw: AEDApiItem, index: number): AEDItem | null {
 }
 
 async function fetchWithFallback(url: string): Promise<AEDApiResponse> {
+  // 1. 직접 호출 시도
   try {
     const res = await axios.get<AEDApiResponse>(url, { timeout: 10000 });
     return res.data;
-  } catch (directError) {
-    // CORS 에러 또는 네트워크 에러 시 프록시로 재시도
-    const proxyUrl = `${CORS_PROXY}${encodeURIComponent(url)}`;
-    const res = await axios.get<AEDApiResponse>(proxyUrl, { timeout: 15000 });
-    return res.data;
+  } catch {
+    // CORS 또는 네트워크 오류 → 프록시 fallback
   }
+
+  // 2. 프록시 순서대로 시도
+  let lastError: unknown;
+  for (const makeProxyUrl of CORS_PROXIES) {
+    try {
+      const res = await axios.get<AEDApiResponse>(makeProxyUrl(url), { timeout: 15000 });
+      return res.data;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError;
 }
 
 export async function fetchAEDList(): Promise<AEDItem[]> {
