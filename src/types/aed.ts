@@ -25,17 +25,17 @@ export interface AEDApiItem {
 }
 
 // 안전데이터포털 AED API 응답 전체 구조
+// 실제 응답: body가 items 객체가 아닌 배열로 직접 반환됨
 export interface AEDApiResponse {
   header: {
     resultCode: string;
     resultMsg: string;
+    errorMsg: string | null;
   };
-  body: {
-    items: AEDApiItem[] | { item: AEDApiItem[] } | AEDApiItem;
-    numOfRows: number;
-    pageNo: number;
-    totalCount: number;
-  };
+  numOfRows: number;
+  pageNo: number;
+  totalCount: number;
+  body: AEDApiItem[];
 }
 
 // 앱 내부에서 사용하는 정제된 AED 데이터

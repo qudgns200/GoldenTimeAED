@@ -28,11 +28,8 @@ function buildQueryString(apiKey: string, center?: Coordinates): string {
 }
 
 function normalizeItems(body: AEDApiResponse['body']): AEDApiItem[] {
-  const raw = body.items;
-  if (!raw) return [];
-  if (Array.isArray(raw)) return raw;
-  if ('item' in raw && Array.isArray(raw.item)) return raw.item;
-  return [raw as AEDApiItem];
+  if (!body || !Array.isArray(body)) return [];
+  return body;
 }
 
 function toAEDItem(raw: AEDApiItem, index: number): AEDItem | null {
@@ -64,6 +61,10 @@ export async function fetchAEDList(center?: Coordinates): Promise<AEDItem[]> {
   }
 
   const rawItems = normalizeItems(data.body);
+  if (rawItems.length === 0 && data.totalCount > 0) {
+    // body 파싱 실패 시 경고 (구조 변경 감지용)
+    console.warn('AED body 파싱 실패. 실제 응답 구조:', JSON.stringify(data).slice(0, 200));
+  }
   return rawItems
     .map((item, i) => toAEDItem(item, i))
     .filter((item): item is AEDItem => item !== null);
