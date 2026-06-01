@@ -13,9 +13,6 @@ interface UseAEDReturn extends AEDState {
   loadAED: (center: Coordinates) => Promise<void>;
 }
 
-// 전체 AED 목록 캐시 (페이지 생애주기 동안 재사용)
-let cachedAllAED: AEDItem[] | null = null;
-
 export function useAED(): UseAEDReturn {
   const [state, setState] = useState<AEDState>({
     items: [],
@@ -30,13 +27,13 @@ export function useAED(): UseAEDReturn {
     abortRef.current = false;
 
     try {
-      if (!cachedAllAED) {
-        cachedAllAED = await fetchAEDList();
-      }
+      // center를 전달해 서버에서 좌표 범위로 1차 필터링
+      const allAED = await fetchAEDList(center);
 
       if (abortRef.current) return;
 
-      const nearby = filterByRadius(cachedAllAED, center);
+      // geolib로 정확한 300m 반경 2차 필터링
+      const nearby = filterByRadius(allAED, center);
       setState({ items: nearby, isLoading: false, error: null });
     } catch (err) {
       if (abortRef.current) return;

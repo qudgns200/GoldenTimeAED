@@ -1,18 +1,30 @@
 import axios from 'axios';
-import type { AEDApiItem, AEDApiResponse, AEDItem } from '../types/aed';
+import type { AEDApiItem, AEDApiResponse, AEDItem, Coordinates } from '../types/aed';
 
 // 로컬(DEV): Vite 프록시 → safetydata.go.kr
 // 프로덕션(Cloudflare Pages): Pages Function → safetydata.go.kr
-// 두 환경 모두 /api/aed 경로를 사용하므로 분기 불필요
 const AED_PROXY_PATH = '/api/aed';
 
-function buildQueryString(apiKey: string): string {
-  return new URLSearchParams({
+// 300m 반경을 위경도 차이로 환산 (여유있게 0.01 ≈ 약 1km)
+const COORD_MARGIN = 0.01;
+
+function buildQueryString(apiKey: string, center?: Coordinates): string {
+  const params: Record<string, string> = {
     serviceKey: apiKey,
     numOfRows: '1000',
     pageNo: '1',
     returnType: 'json',
-  }).toString();
+  };
+
+  // 좌표 범위 파라미터로 서버 측 1차 필터링 (전국 데이터 대신 주변만 요청)
+  if (center) {
+    params.startLat = String(center.lat - COORD_MARGIN);
+    params.endLat   = String(center.lat + COORD_MARGIN);
+    params.startLot = String(center.lng - COORD_MARGIN);
+    params.endLot   = String(center.lng + COORD_MARGIN);
+  }
+
+  return new URLSearchParams(params).toString();
 }
 
 function normalizeItems(body: AEDApiResponse['body']): AEDApiItem[] {
@@ -24,23 +36,24 @@ function normalizeItems(body: AEDApiResponse['body']): AEDApiItem[] {
 }
 
 function toAEDItem(raw: AEDApiItem, index: number): AEDItem | null {
-  const lat = parseFloat(raw.lat);
-  const lng = parseFloat(raw.lon);
+  const lat = parseFloat(raw.LAT);
+  const lng = parseFloat(raw.LOT);
   if (isNaN(lat) || isNaN(lng)) return null;
+
   return {
-    id: `aed-${index}-${lat}-${lng}`,
+    id: `aed-${raw.SN ?? index}`,
     coordinates: { lat, lng },
-    buildPlace: raw.buildPlace ?? '설치위치 정보 없음',
-    org: raw.org ?? '관리기관 정보 없음',
-    buildAddress: raw.buildAddress ?? '',
+    buildPlace: raw.INSTL_PSTN ?? '설치위치 정보 없음',
+    org: raw.MNG_INST_NM ?? '관리기관 정보 없음',
+    buildAddress: raw.INSTL_ADDR ?? '',
   };
 }
 
-export async function fetchAEDList(): Promise<AEDItem[]> {
+export async function fetchAEDList(center?: Coordinates): Promise<AEDItem[]> {
   const apiKey = import.meta.env.VITE_AED_API_KEY as string;
   if (!apiKey) throw new Error('AED API 키가 설정되지 않았습니다. .env 파일을 확인해주세요.');
 
-  const qs = buildQueryString(apiKey);
+  const qs = buildQueryString(apiKey, center);
   const res = await axios.get<AEDApiResponse>(`${AED_PROXY_PATH}?${qs}`, {
     timeout: 10000,
   });

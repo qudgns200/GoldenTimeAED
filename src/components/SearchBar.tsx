@@ -18,11 +18,14 @@ export function SearchBar({ onSearch, isLoading }: Props) {
     <form className="search-bar" onSubmit={handleSubmit} role="search">
       <input
         type="text"
+        id="location-search"
+        name="location-search"
         className="search-input"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder="주소 또는 장소를 입력하세요"
         aria-label="위치 검색"
+        autoComplete="off"
         disabled={isLoading}
       />
       <button
