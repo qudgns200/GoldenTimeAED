@@ -1,18 +1,5 @@
 # API 명세서
 
-## ⚠️ 문서 상태
-
-이 문서의 "외부 API" 섹션 중 **요청 파라미터·응답 필드는 아직 실제 응답으로 검증되지 않은 placeholder**다. safetydata.go.kr의 상세 기술 문서(요청변수/응답필드/예제)는 로그인 후 활용신청을 완료해야 열람 가능해 자동으로 가져올 수 없었다. 사용자는 이미 인증키를 발급받은 상태이므로, **Phase 1에서 아래 절차대로 실제 호출 결과를 확인한 뒤 이 문서를 확정**해야 한다.
-
-### 검증 절차 (Phase 1)
-
-1. `backend/scripts/probe_api.py`(Phase 1에서 작성)로 실제 인증키를 사용해 API를 1회 호출한다.
-2. 원본 응답을 `docs/sample_response.json`으로 저장한다 (`.gitignore`에 포함되어 있어 커밋되지 않음 — 개인 참고용).
-3. 실제 필드명·타입을 확인해 아래 "요청 파라미터"·"응답 필드" 표와 `supabase/schema.sql`을 갱신한다.
-4. 이 경고 섹션을 제거한다.
-
----
-
 ## 1. 외부 API — safetydata.go.kr AED 위치정보
 
 - **출처**: [https://www.safetydata.go.kr/disaster-data/view?dataSn=59](https://www.safetydata.go.kr/disaster-data/view?dataSn=59)
@@ -23,13 +10,11 @@
 
 ### 엔드포인트
 
-> TBD — Phase 1에서 실제 요청 URL로 확정 (safetydata.go.kr 마이페이지의 "API 활용" 상세 화면에서 제공되는 Endpoint URL을 그대로 사용)
-
 ```
-GET https://www.safetydata.go.kr/V2/api/{서비스ID}
+GET https://www.safetydata.go.kr/V2/api/DSSP-IF-00068
 ```
 
-### 요청 파라미터 (placeholder — 검증 필요)
+### 요청 파라미터 (검증 완료)
 
 | 파라미터 | 타입 | 필수 | 설명 |
 |---|---|---|---|
@@ -38,29 +23,69 @@ GET https://www.safetydata.go.kr/V2/api/{서비스ID}
 | `numOfRows` | int | N | 페이지당 행 수 |
 | `returnType` | string | N | `json` 또는 `xml` |
 
-### 응답 필드 (placeholder — 검증 필요)
+### 응답 필드 (검증 완료 — `docs/sample_response.json` 기준)
 
-| 필드명(추정) | 타입 | 설명 |
+| 필드명 | 타입 | 설명 |
 |---|---|---|
-| 관리번호 | string | 시설 고유 식별자 |
-| 설치기관명 | string | AED 설치 기관/건물명 |
-| 설치장소명 | string | 상세 설치 위치 |
-| 도로명주소 | string | 도로명 주소 |
-| 지번주소 | string | 지번 주소 |
-| 위도 | number | latitude |
-| 경도 | number | longitude |
-| 관리기관명 | string | 관리 책임 기관 |
-| 전화번호 | string | 관리 기관 연락처 |
-| 설치일자 | date | 설치일 |
-| 데이터기준일자 | date | 원본 데이터 갱신 기준일 |
+| `SN` | int | 일련번호 (고유 식별자) |
+| `MKR_NM` | string | 제조사명 |
+| `MDL_NM` | string | 모델명 |
+| `MNG_INST_NM` | string | 관리기관명 |
+| `MNGR_NM` | string | 관리자명 (일부 마스킹) |
+| `MNGR_TELNO` | string | 관리자 전화번호 (일부 마스킹, 예: `02-******`) |
+| `CTPV_NM` | string | 시도명 |
+| `SE` | string | 시군구명 |
+| `ADDR` | string | 도로명주소(전체) |
+| `INSTL_ADDR` | string | 설치 도로명주소(시/도·구 생략된 축약형) |
+| `INSTL_PSTN` | string | 설치위치 상세 (예: "529동", "경로당 내") |
+| `LAT` | number | 위도 |
+| `LOT` | number | 경도 (필드명은 LOT이지만 값은 경도) |
+| `XMAP_CRTS` | number | TM좌표계 X |
+| `YMAP_CRTS` | number | TM좌표계 Y |
+| `ZIP_1` | string | 우편번호 앞 3자리 |
+| `ZIP_2` | string | 우편번호 뒤 3자리 |
+
+> ⚠️ 원래 예상했던 "설치일자", "데이터기준일자", "지번주소" 필드는 실제 응답에 존재하지 않는다. `supabase/schema.sql`에서 해당 컬럼을 제외했다.
 
 ### 요청/응답 예제
 
-> TBD — `docs/sample_response.json` 확보 후 대표 예시 1건을 이 문서에 옮겨 적을 것
+`pageNo=1, numOfRows=5`로 호출한 실제 응답(개인정보 마스킹은 API 원본 그대로):
+
+```json
+{
+  "header": { "resultMsg": "NORMAL SERVICE", "resultCode": "00", "errorMsg": null },
+  "numOfRows": 5,
+  "pageNo": 1,
+  "totalCount": 62000,
+  "body": [
+    {
+      "ZIP_2": "03", "ZIP_1": "055",
+      "MKR_NM": "(주)나눔테크",
+      "INSTL_ADDR": "송파대로 567 (잠실동, 잠실주공아파트)",
+      "MDL_NM": "NT-381.O",
+      "CTPV_NM": "서울특별시",
+      "ADDR": "서울특별시 송파구 송파대로 567 (잠실동, 잠실주공아파트)",
+      "LOT": 127.0930486801,
+      "MNG_INST_NM": "잠실주공5단지",
+      "SE": "송파구",
+      "YMAP_CRTS": 4510875.04039,
+      "MNGR_TELNO": "02-******",
+      "XMAP_CRTS": 14147933.46243,
+      "SN": 10152,
+      "MNGR_NM": "김**",
+      "INSTL_PSTN": "529동",
+      "LAT": 37.5131381759
+    }
+  ]
+}
+```
+
+전체 응답 원본은 `docs/sample_response.json` 참고 (커밋 대상 아님, 개인 참고용).
 
 ### 에러 코드
 
-> TBD — 실제 호출 시 발생하는 오류 응답(잘못된 키, 요청 한도 초과 등) 확인 후 기록
+- `header.resultCode`가 `"00"`이 아니면 오류. `resultMsg`/`errorMsg`에 상세 메시지 포함.
+- 잘못된 `serviceKey` 등 인증 오류/요청 한도 초과 케이스는 아직 실제로 재현/기록하지 않았음 — Phase 3(ETL 스크립트) 작성 시 재시도/에러 핸들링 구현하며 함께 확인할 것.
 
 ---
 
@@ -71,18 +96,18 @@ GET https://www.safetydata.go.kr/V2/api/{서비스ID}
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | `id` | bigint (PK) | 내부 자동 증가 ID |
-| `source_id` | text (unique) | 원본 API의 고유 식별자 매핑 (필드명 확정 전 placeholder) |
-| `org_name` | text | 설치기관명 |
-| `install_place` | text | 설치장소명 |
-| `address_road` | text | 도로명주소 |
-| `address_jibun` | text | 지번주소 |
-| `latitude` | double precision | 위도 |
-| `longitude` | double precision | 경도 |
-| `phone` | text | 연락처 |
-| `manage_org` | text | 관리기관명 |
-| `install_date` | date | 설치일자 |
-| `floor_info` | text | 설치 위치 상세(층수 등) |
-| `data_base_date` | date | 원본 데이터 기준일 |
+| `source_id` | text (unique) | 원본 `SN`(일련번호) |
+| `org_name` | text | 원본 `MNG_INST_NM` (관리기관명) |
+| `install_place` | text | 원본 `INSTL_PSTN` (설치위치 상세) |
+| `address_road` | text | 원본 `ADDR` (도로명주소 전체) |
+| `latitude` | double precision | 원본 `LAT` |
+| `longitude` | double precision | 원본 `LOT` |
+| `phone` | text | 원본 `MNGR_TELNO` (일부 마스킹) |
+| `manager_name` | text | 원본 `MNGR_NM` (일부 마스킹) |
+| `maker_name` | text | 원본 `MKR_NM` (제조사명) |
+| `model_name` | text | 원본 `MDL_NM` (모델명) |
+| `sido_name` | text | 원본 `CTPV_NM` (시도명) |
+| `sigungu_name` | text | 원본 `SE` (시군구명) |
 | `synced_at` | timestamptz | 마지막 동기화 시각 |
 
 **RLS 정책**: `anon`/`authenticated` 역할은 SELECT만 허용. INSERT/UPDATE/UPSERT는 `service_role`(백엔드 ETL)만 가능 — RLS를 우회하므로 별도 정책 불필요.

@@ -4,19 +4,19 @@ GoldenTimeAED — AED 위치 지도 웹앱. 단계별(Phase) 진행 순서와 �
 
 ## Phase 0 — 프로젝트 초기화
 
-- [ ] `git init` 및 최초 커밋
-- [ ] 폴더 구조 확정 (`backend/`, `frontend/`, `supabase/`, `docs/`, `.github/workflows/`) — 완료
-- [ ] `.env.example`, `requirements.txt`, `.gitignore` — 완료
-- [ ] `.env` 로컬 생성 후 실제 키 값 채우기 (`SAFETYDATA_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `NAVER_MAP_CLIENT_ID`)
+- [x] `git init` 및 최초 커밋
+- [x] 폴더 구조 확정 (`backend/`, `frontend/`, `supabase/`, `docs/`, `.github/workflows/`) — 완료
+- [x] `.env.example`, `requirements.txt`, `.gitignore` — 완료
+- [x] `.env` 로컬 생성 (파일 생성 완료, 실제 키 값(`SAFETYDATA_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `NAVER_MAP_CLIENT_ID`)은 각자 로컬에서 채워야 함)
 
 **완료 기준**: `pip install -r requirements.txt`가 로컬에서 성공.
 
 ## Phase 1 — 공공데이터 API 검증
 
-- [ ] `backend/scripts/probe_api.py` 작성: `SAFETYDATA_API_KEY`로 실제 엔드포인트 호출
-- [ ] 응답을 `docs/sample_response.json`에 저장 (커밋 제외)
-- [ ] 실제 필드명/타입을 [`docs/API_SPEC.md`](API_SPEC.md)에 반영해 placeholder 제거
-- [ ] 확정된 필드에 맞춰 `supabase/schema.sql` 컬럼명 조정
+- [x] `backend/scripts/probe_api.py` 작성: `SAFETYDATA_API_KEY`로 실제 엔드포인트 호출
+- [x] 응답을 `docs/sample_response.json`에 저장 (커밋 제외)
+- [x] 실제 필드명/타입을 [`docs/API_SPEC.md`](API_SPEC.md)에 반영해 placeholder 제거
+- [x] 확정된 필드에 맞춰 `supabase/schema.sql` 컬럼명 조정
 
 **완료 기준**: `API_SPEC.md`의 "⚠️ 문서 상태" 경고 섹션 제거 가능.
 

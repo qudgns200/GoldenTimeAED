@@ -1,21 +1,20 @@
--- GoldenTimeAED: aed_locations 테이블 초안 스키마
--- 주의: 아래 컬럼은 safetydata.go.kr AED API의 "추정" 필드다.
--- Phase 1(docs/API_SPEC.md 검증)에서 실제 응답 필드가 확정되면 이 스키마도 함께 갱신할 것.
+-- GoldenTimeAED: aed_locations 테이블
+-- safetydata.go.kr AED API(DSSP-IF-00068) 실제 응답 필드 기준 (docs/API_SPEC.md 참조, 2026-07-12 검증)
 
 create table if not exists aed_locations (
     id bigint generated always as identity primary key,
-    source_id text unique,           -- 원본 데이터의 관리번호 (실제 필드명 확정 전 placeholder)
-    org_name text,                   -- 설치기관명
-    install_place text,              -- 설치장소명
-    address_road text,               -- 도로명주소
-    address_jibun text,              -- 지번주소
-    latitude double precision,
-    longitude double precision,
-    phone text,
-    manage_org text,                 -- 관리기관명
-    install_date date,
-    floor_info text,                 -- 설치 위치 상세(층수 등)
-    data_base_date date,             -- 데이터 기준일자 (원본 API 기준)
+    source_id text unique,           -- 원본 SN (일련번호)
+    org_name text,                   -- MNG_INST_NM: 관리기관명
+    install_place text,              -- INSTL_PSTN: 설치위치 상세
+    address_road text,               -- ADDR: 도로명주소(전체)
+    latitude double precision,       -- LAT
+    longitude double precision,      -- LOT
+    phone text,                      -- MNGR_TELNO: 관리자 전화번호 (일부 마스킹됨)
+    manager_name text,               -- MNGR_NM: 관리자명 (일부 마스킹됨)
+    maker_name text,                 -- MKR_NM: 제조사명
+    model_name text,                 -- MDL_NM: 모델명
+    sido_name text,                  -- CTPV_NM: 시도명
+    sigungu_name text,               -- SE: 시군구명
     synced_at timestamptz not null default now()
 );
 
