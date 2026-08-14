@@ -10,6 +10,7 @@
 | `config.example.js` | 설정 템플릿 (커밋됨) |
 | `config.js` | 실제 설정 (**커밋 안 함** — `build-config.sh`가 생성) |
 | `build-config.sh` | 환경변수로부터 `config.js`를 생성 |
+| `_headers` | Cloudflare Pages 헤더 규칙 (보안 헤더 + 캐시 무효화) |
 
 ## 로컬 실행
 
@@ -26,13 +27,36 @@ cd frontend && python -m http.server 8000
 `file://`에서는 인증에 실패한다. 로컬 개발 시 네이버 콘솔 웹 서비스 URL에
 `http://127.0.0.1:8000`을 등록해야 한다.
 
-## 배포 (Vercel / Cloudflare Pages)
+## 배포 (Cloudflare Pages)
 
-- **빌드 명령**: `sh frontend/build-config.sh`
-- **출력 디렉토리**: `frontend`
-- **환경변수**: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `NAVER_MAP_CLIENT_ID`
-  (선택: `NAVER_MAP_AUTH_PARAM`)
-- 배포 후 네이버 클라우드 콘솔에 배포 도메인을 **웹 서비스 URL로 등록**해야 지도가 뜬다.
+Cloudflare 대시보드 → Workers & Pages → Create → Pages → Connect to Git에서
+이 저장소를 연결한 뒤 아래와 같이 설정한다.
+
+| 항목 | 값 |
+|---|---|
+| Framework preset | None |
+| Build command | `sh frontend/build-config.sh` |
+| Build output directory | `frontend` |
+| Root directory | (비움 — 저장소 루트) |
+
+**환경변수** (Settings → Environment variables, Production/Preview 모두):
+
+| 이름 | 비고 |
+|---|---|
+| `SUPABASE_URL` | |
+| `SUPABASE_ANON_KEY` | RLS로 SELECT만 허용되므로 공개되어도 안전 |
+| `NAVER_MAP_CLIENT_ID` | |
+| `NAVER_MAP_AUTH_PARAM` | 선택. 기본 `ncpKeyId`, 구 콘솔 키는 `ncpClientId` |
+
+셋 중 하나라도 없으면 `build-config.sh`가 exit 1로 빌드를 실패시킨다.
+설정이 빠진 채 배포되는 일은 없다.
+
+배포 후 **네이버 클라우드 콘솔에 배포 도메인(`*.pages.dev` 및 커스텀 도메인)을
+웹 서비스 URL로 등록**해야 지도가 뜬다. 미등록 시 인증 실패 안내 화면이 표시된다.
+
+`_headers`는 빌드 출력 디렉토리(`frontend/`) 안에 있어야 적용된다.
+`Referrer-Policy`를 `no-referrer`/`same-origin`으로 바꾸면 네이버 지도 인증이
+깨지므로 건드리지 말 것.
 
 ## 설계 메모
 

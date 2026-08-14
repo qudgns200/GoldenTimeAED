@@ -1,0 +1,13 @@
+# Cloudflare Pages 헤더 규칙.
+# 이 파일은 빌드 출력 디렉토리(frontend/) 안에 있어야 적용된다.
+# 제한: 규칙 100개, 줄당 2,000자.
+
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  # 네이버 지도는 Referer로 웹 서비스 URL을 검증한다.
+  # no-referrer 나 same-origin 으로 바꾸면 지도 인증이 실패하므로 주의.
+  Referrer-Policy: strict-origin-when-cross-origin
+  # 파일명에 해시가 없어 캐시가 남으면 배포해도 구버전이 보이고,
+  # config.js는 키를 교체해도 반영되지 않는다. 항상 재검증시킨다.
+  Cache-Control: public, max-age=0, must-revalidate

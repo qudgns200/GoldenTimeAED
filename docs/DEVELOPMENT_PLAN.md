@@ -79,11 +79,21 @@ GoldenTimeAED — AED 위치 지도 웹앱. 단계별(Phase) 진행 순서와 �
 
 ## Phase 6 — 배포
 
-- [ ] Vercel 또는 Cloudflare Pages 중 택1 (둘 다 정적 사이트 호스팅으로 동일하게 동작 — 팀 선호에 따라 결정)
+- [x] **Cloudflare Pages로 결정.** 설정 파일은 [`frontend/_headers`](../frontend/_headers), 빌드는 [`frontend/build-config.sh`](../frontend/build-config.sh)
+- [ ] Cloudflare 대시보드에서 저장소 연결 + 빌드 설정 (`sh frontend/build-config.sh` / 출력 `frontend`)
 - [ ] 배포 환경에 `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `NAVER_MAP_CLIENT_ID` 주입
-- [ ] 네이버 클라우드 콘솔에 배포 도메인을 리퍼러 화이트리스트로 등록
+- [ ] 네이버 클라우드 콘솔에 배포 도메인(`*.pages.dev`)을 웹 서비스 URL로 등록
 
 **완료 기준**: 배포된 URL에서 지도와 마커가 정상 표시됨.
+
+설정 상세는 [`frontend/README.md`](../frontend/README.md) 배포 절 참고. 주의점:
+
+- `_headers`는 빌드 출력 디렉토리(`frontend/`) 안에 있어야 적용된다.
+- `Referrer-Policy`를 `no-referrer`/`same-origin`으로 바꾸면 **네이버 지도 인증이 깨진다**
+  (네이버가 Referer로 웹 서비스 URL을 검증하기 때문).
+- 파일명에 해시가 없으므로 `Cache-Control: max-age=0, must-revalidate`로 항상 재검증시킨다.
+  캐시가 남으면 배포해도 구버전이 보이고 `config.js`의 키 교체가 반영되지 않는다.
+- 환경변수가 하나라도 없으면 `build-config.sh`가 exit 1로 빌드를 실패시킨다(검증 완료).
 
 ## Phase 7 — QA
 

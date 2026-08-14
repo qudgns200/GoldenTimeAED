@@ -74,7 +74,7 @@ backend\.venv\Scripts\python.exe backend\sync.py                # 수동 동기�
 
 ## 배포
 
-- **프론트엔드**: `frontend/` 디렉토리를 Vercel 또는 Cloudflare Pages에 정적 사이트로 배포. `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `NAVER_MAP_CLIENT_ID`를 빌드 시점 또는 런타임에 주입.
+- **프론트엔드**: **Cloudflare Pages**로 배포한다 (Phase 6에서 확정). 빌드 명령 `sh frontend/build-config.sh`, 출력 디렉토리 `frontend`. `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `NAVER_MAP_CLIENT_ID`를 Pages 환경변수로 주입하면 빌드 시 `frontend/config.js`가 생성된다. 설정 상세는 [`frontend/README.md`](frontend/README.md) 참고.
 - **배치 동기화**: 별도 호스팅 불필요. GitHub Actions 저장소 시크릿에 `SAFETYDATA_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`를 등록하고 cron이 `backend/sync.py`를 직접 실행.
 
 ## 주의사항
