@@ -60,12 +60,22 @@ GoldenTimeAED — AED 위치 지도 웹앱. 단계별(Phase) 진행 순서와 �
 
 ## Phase 5 — 프론트엔드
 
-- [ ] `frontend/index.html`: 네이버 지도 JS API v3 초기화
-- [ ] Supabase JS client 연동, 뷰포트 기준 AED 조회(`docs/API_SPEC.md` 3절 쿼리 패턴)
-- [ ] 마커 렌더링 + 클릭 시 상세 정보(기관명/주소/전화번호) 표시
-- [ ] 브라우저 Geolocation으로 "내 위치" 표시 및 주변 AED 정렬(선택)
+- [x] `frontend/index.html`: 네이버 지도 JS API v3 초기화
+- [x] Supabase JS client 연동, 뷰포트 기준 AED 조회(`docs/API_SPEC.md` 3절 쿼리 패턴)
+- [x] 마커 렌더링 + 클릭 시 상세 정보(기관명/주소/전화번호) 표시
+- [x] 브라우저 Geolocation으로 "내 위치" 표시
+- [ ] **브라우저에서 지도 렌더링 최종 확인** (네이버 콘솔에 `http://127.0.0.1:8000` 등록 필요)
 
 **완료 기준**: 로컬에서 `frontend/index.html` 열었을 때 실제 AED 마커가 지도에 표시됨.
+
+구현 시 확인된 사항:
+
+- **PostgREST는 요청당 1000행 상한**이며 초과분은 경고 없이 잘린다(전국 요청 시 62,000건 중 1,000건만 반환).
+  `app.js`는 `limit`(500) + 정확한 `count`를 함께 요청해 "N개 중 500개만 표시" 배너로 알린다.
+- 위도 스팬이 0.15도를 넘으면 조회하지 않는다. 서울 도심은 ±0.05도에 AED가 2,545개라 마커 표시가 무의미하다.
+- 네이버 지도 인증 파라미터는 신규 콘솔 키 `ncpKeyId` / 구 콘솔 키 `ncpClientId`로 갈린다.
+  `config.js`에서 전환 가능하며 인증 실패 시 안내 화면이 뜬다.
+- `file://`로 열면 리퍼러 검사에 걸려 지도가 뜨지 않는다. 반드시 HTTP로 서빙할 것.
 
 ## Phase 6 — 배포
 

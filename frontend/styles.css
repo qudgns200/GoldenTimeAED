@@ -1,0 +1,158 @@
+:root {
+  --topbar-h: 52px;
+  --accent: #d92d20;
+  --text: #101828;
+  --muted: #667085;
+  --border: #e4e7ec;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo",
+    "Malgun Gothic", sans-serif;
+  color: var(--text);
+}
+
+.topbar {
+  height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: #fff;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+}
+
+#locate-btn {
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+#locate-btn:hover { background: #f9fafb; }
+#locate-btn:active { transform: translateY(1px); }
+
+#map {
+  width: 100%;
+  height: calc(100% - var(--topbar-h));
+}
+
+/* 하단 상태 표시줄 — 조회 건수/경고/오류 */
+.status {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%) translateY(8px);
+  max-width: min(92vw, 520px);
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(16, 24, 40, 0.88);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  z-index: 100;
+}
+
+.status--visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.status--warn { background: rgba(181, 71, 8, 0.94); }
+.status--error { background: rgba(180, 35, 24, 0.94); }
+
+/* 마커 클릭 시 뜨는 정보창 */
+.iw {
+  min-width: 200px;
+  max-width: 280px;
+  padding: 12px 14px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(16, 24, 40, 0.18);
+}
+
+.iw__title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.iw__row {
+  margin: 4px 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.iw__row span {
+  display: inline-block;
+  min-width: 52px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* 내 위치 표시 점 */
+.me-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #1570ef;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 2px rgba(21, 112, 239, 0.35);
+}
+
+/* 치명적 오류(설정 누락, 지도 인증 실패 등) */
+.fatal {
+  position: fixed;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.96);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 200;
+}
+
+.fatal__box {
+  max-width: 480px;
+  text-align: center;
+}
+
+.fatal__box h2 {
+  margin: 0 0 10px;
+  font-size: 17px;
+  color: var(--accent);
+}
+
+.fatal__box p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted);
+  word-break: keep-all;
+}
+
+@media (max-width: 480px) {
+  .topbar h1 { font-size: 15px; }
+  .status { bottom: 14px; font-size: 12.5px; }
+}

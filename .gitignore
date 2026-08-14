@@ -18,6 +18,10 @@ venv/
 # Node (frontend tooling, if any)
 node_modules/
 
+# 프론트엔드 런타임 설정 — build-config.sh가 환경변수로부터 생성한다.
+# 값 자체는 공개되어도 안전하지만(RLS·리퍼러 화이트리스트로 보호) 환경별 분리를 위해 커밋하지 않는다.
+frontend/config.js
+
 # 배포 도구 (Phase 6) — 프로젝트 ID 등 로컬 연결 정보가 들어간다
 .vercel/
 .wrangler/
