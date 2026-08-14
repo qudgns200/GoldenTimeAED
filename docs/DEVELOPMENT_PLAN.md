@@ -22,11 +22,15 @@ GoldenTimeAED — AED 위치 지도 웹앱. 단계별(Phase) 진행 순서와 �
 
 ## Phase 2 — Supabase 스키마 설계/생성
 
-- [ ] Supabase 프로젝트에서 `supabase/schema.sql` 실행 (테이블 + 인덱스 + RLS 정책)
-- [ ] `anon` 키로 SELECT 가능, INSERT/UPDATE 불가 확인
-- [ ] `service_role` 키로 INSERT/UPSERT 가능 확인
+- [x] Supabase 프로젝트에서 `supabase/schema.sql` 실행 (테이블 + 인덱스 + RLS 정책)
+- [x] `anon` 키로 SELECT 가능, INSERT/UPDATE 불가 확인
+- [x] `service_role` 키로 INSERT/UPSERT 가능 확인
 
 **완료 기준**: Supabase 대시보드 SQL Editor 또는 REST API로 정책 동작 확인 완료.
+
+검증은 [`backend/scripts/verify_rls.py`](../backend/scripts/verify_rls.py)로 자동화되어 있다. anon INSERT는 `42501 new row violates row-level security policy`로 거부되는 것이 정상 동작이다.
+
+> 프리티어 프로젝트는 7일간 미사용 시 자동 일시중지(pause)되며, 이때 `<project-ref>.supabase.co` 서브도메인이 DNS에서 사라진다. 배치가 갑자기 실패하면 대시보드에서 프로젝트 상태부터 확인할 것.
 
 ## Phase 3 — Python ETL 스크립트
 

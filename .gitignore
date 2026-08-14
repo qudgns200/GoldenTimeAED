@@ -1,20 +1,35 @@
 # Python
 __pycache__/
 *.pyc
+*.pyo
 .venv/
 venv/
 *.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Environment secrets
+# .env.* 를 통째로 무시하되 커밋 대상인 .env.example만 예외로 둔다.
 .env
-.env.local
+.env.*
+!.env.example
 
 # Node (frontend tooling, if any)
 node_modules/
 
+# 배포 도구 (Phase 6) — 프로젝트 ID 등 로컬 연결 정보가 들어간다
+.vercel/
+.wrangler/
+
+# Supabase CLI 로컬 아티팩트
+supabase/.temp/
+supabase/.branches/
+
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Editor
 .vscode/

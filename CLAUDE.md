@@ -56,12 +56,19 @@ docs/                API_SPEC.md, DEVELOPMENT_PLAN.md
 
 ## 로컬 실행
 
-```bash
-pip install -r requirements.txt
+가상환경은 `backend/.venv`에 둔다 (루트가 아님).
+
+```powershell
+python -m venv backend/.venv
+backend\.venv\Scripts\python.exe -m pip install -r requirements.txt
 cp .env.example .env   # 값 채우기
-python backend/scripts/probe_api.py   # API 응답 구조 확인 (Phase 1)
-python backend/sync.py                # 수동 동기화 실행
+
+backend\.venv\Scripts\python.exe backend\scripts\probe_api.py   # API 응답 구조 확인 (Phase 1)
+backend\.venv\Scripts\python.exe backend\scripts\verify_rls.py  # RLS 정책 검증 (Phase 2)
+backend\.venv\Scripts\python.exe backend\sync.py                # 수동 동기화 실행
 ```
+
+`requirements.txt`에는 배치 ETL 실행에 실제로 필요한 것(httpx, supabase, python-dotenv)만 둔다. GitHub Actions cron이 이 목록만 설치하면 되도록 유지할 것. FastAPI 수동 트리거(`backend/main.py`)를 만지는 경우에만 `requirements-dev.txt`를 설치한다.
 
 프론트엔드는 별도 빌드 없이 정적 파일이므로 `frontend/index.html`을 브라우저로 열거나 간단한 정적 서버로 서빙하면 된다.
 

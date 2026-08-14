@@ -1,0 +1,7 @@
+# 로컬 개발용 추가 의존성.
+# FastAPI(backend/main.py 수동 트리거)는 선택 사항이며 GitHub Actions 배치에는 필요 없다.
+# 배치가 설치하는 목록은 requirements.txt만으로 충분하다.
+-r requirements.txt
+
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
