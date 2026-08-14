@@ -34,15 +34,25 @@ GoldenTimeAED — AED 위치 지도 웹앱. 단계별(Phase) 진행 순서와 �
 
 ## Phase 3 — Python ETL 스크립트
 
-- [ ] `backend/sync.py`: fetch(safetydata.go.kr) → transform(스키마 매핑) → upsert(Supabase, `source_id` 기준 conflict 처리)
-- [ ] 페이지네이션 처리 (전체 데이터 수집)
-- [ ] 실패 시 재시도/로깅
+- [x] `backend/sync.py`: fetch(safetydata.go.kr) → transform(스키마 매핑) → upsert(Supabase, `source_id` 기준 conflict 처리)
+- [x] 페이지네이션 처리 (전체 데이터 수집)
+- [x] 실패 시 재시도/로깅
 
 **완료 기준**: `python backend/sync.py` 로컬 실행 시 Supabase `aed_locations`에 전체 데이터가 채워짐.
+→ 62,000행 적재 확인 (약 43초). 재실행해도 62,000행 유지(멱등).
+
+구현 시 확인된 사항:
+
+- `numOfRows`는 **1000이 상한**이다 (2000을 요청해도 1000건만 반환). 전체 62페이지.
+- 종료 조건은 빈 `body`다. 마지막 페이지 다음 페이지는 오류가 아니라 `resultCode=00` + 빈 배열.
+- **`SN`은 영속 식별자가 아니다** — 재발행 시 다른 AED에 재할당된다 ([`API_SPEC.md`](API_SPEC.md) 경고 참조).
+  upsert만으로는 사라진 AED가 남으므로, 수집 완전성 검증 통과 후 `synced_at` 기준으로 오래된 행을 삭제한다.
+- 안전장치: `resultCode != "00"`이면 즉시 중단, 수집량이 `totalCount`의 50% 미만이면 upsert 없이 실패 종료.
+  어떤 경우에도 delete 후 insert 방식은 쓰지 않는다.
 
 ## Phase 4 — GitHub Actions 스케줄러
 
-- [ ] `.github/workflows/sync-aed.yml` 작성: cron `17 16 * * *` (KST 01:17) 또는 원하는 새벽 1~2시대 시각
+- [x] `.github/workflows/sync-aed.yml` 작성: cron `17 16 * * *` (KST 01:17) 또는 원하는 새벽 1~2시대 시각
 - [ ] 저장소 시크릿 등록: `SAFETYDATA_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
 - [ ] 워크플로우 수동 실행(`workflow_dispatch`)으로 1회 테스트
 
