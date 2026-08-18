@@ -1,0 +1,8 @@
+# 배포 대상에서 제외할 파일 (.gitignore와 같은 문법).
+# frontend/ 전체가 정적 자산으로 업로드되므로, 공개할 이유가 없는 것은 빼둔다.
+# _headers는 Workers가 파싱해서 헤더 규칙으로 쓰고 파일 자체는 서빙하지 않으므로 적지 않는다.
+
+README.md
+build-config.sh
+config.example.js
+icons/make_icons.py

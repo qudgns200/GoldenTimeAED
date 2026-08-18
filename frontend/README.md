@@ -23,7 +23,8 @@ AED 위치를 안내하는 정적 프론트엔드. 빌드 도구 없이 파일�
 | `config.js` | 실제 설정 (**커밋 안 함** — `build-config.sh`가 생성) |
 | `build-config.sh` | 환경변수로부터 `config.js`를 생성 |
 | `data/` | AED 스냅샷 (**커밋 대상** — `backend/sync.py`가 생성) |
-| `_headers` | Cloudflare Pages 헤더 규칙 (보안 헤더 + 캐시 무효화) |
+| `_headers` | Cloudflare 헤더 규칙 (보안 헤더 + 캐시 무효화) |
+| `.assetsignore` | Workers 배포에서 제외할 파일 (README·빌드 스크립트 등) |
 
 빌드 도구가 없으므로 각 파일은 전역 상수 하나를 노출하는 IIFE다.
 `index.html`의 `<script>` 순서가 곧 의존 순서다.
@@ -56,38 +57,50 @@ cd frontend && python -m http.server 8000
 나침반은 실기기에서만 검증된다. iOS는 권한 요청이 사용자 제스처를 요구하므로
 "나침반 켜기" 버튼을 눌러야 하고, 거부해도 북쪽 고정으로 정상 동작한다.
 
-## 배포 (Cloudflare Pages)
+## 배포 (Cloudflare Workers — 정적 자산)
 
-Cloudflare 대시보드 → Workers & Pages → Create → Pages → Connect to Git에서
-이 저장소를 연결한 뒤 아래와 같이 설정한다.
+Pages가 아니라 **Workers의 정적 자산(static assets)** 기능으로 배포한다.
+서버 코드는 없고 `frontend/`를 통째로 올린다. 설정은 루트 [`wrangler.jsonc`](../wrangler.jsonc)에 있다.
+
+대시보드 → Workers & Pages → 프로젝트 → Settings → Build:
 
 | 항목 | 값 |
 |---|---|
-| Framework preset | None |
 | Build command | `sh frontend/build-config.sh` |
-| Build output directory | `frontend` |
-| Root directory | (비움 — 저장소 루트) |
+| Deploy command | `npx wrangler deploy` |
+| Root directory | `/` |
 
-**환경변수** (Settings → Environment variables, Production/Preview 모두):
+**빌드 변수** (Settings → Build → Variables):
 
 | 이름 | 용도 | 비고 |
 |---|---|---|
 | `NAVER_MAP_CLIENT_ID` | `config.js` 생성 | 없으면 빌드 실패 |
 | `NAVER_MAP_AUTH_PARAM` | `config.js` 생성 | 선택. 기본 `ncpKeyId`, 구 콘솔 키는 `ncpClientId` |
 
+> `wrangler.jsonc`의 `name`이 **대시보드의 Worker 이름과 같아야 한다.**
+> 다르면 `wrangler deploy`가 다른 이름의 Worker를 새로 만들어버린다.
+
 AED 데이터는 빌드가 만들지 않는다. `frontend/data/`의 스냅샷은 저장소에 커밋되어 있고
 GitHub Actions가 갱신한다. 따라서 **빌드는 네트워크를 타지 않아** 빠르고 실패 지점이 없다.
 
-배포 후 **네이버 클라우드 콘솔에 배포 도메인(`*.pages.dev` 및 커스텀 도메인)을
+배포 후 **네이버 클라우드 콘솔에 배포 도메인(`*.workers.dev` 및 커스텀 도메인)을
 웹 서비스 URL로 등록**해야 지도가 뜬다. 미등록 시 앱은 목록 뷰로 폴백하고 원인을 안내한다.
 
-`_headers`는 빌드 출력 디렉토리(`frontend/`) 안에 있어야 적용된다.
+`_headers`는 정적 자산 디렉토리(`frontend/`) 안에 있어야 적용된다. Workers가 이 파일을
+파싱해 헤더 규칙으로 쓰고 파일 자체는 서빙하지 않는다.
 `Referrer-Policy`를 `no-referrer`/`same-origin`으로 바꾸면 네이버 지도 인증이
 깨지므로 건드리지 말 것.
 
+`.assetsignore`는 업로드에서 뺄 파일 목록이다(README, 빌드 스크립트 등 공개할 이유가 없는 것).
+
+**`not_found_handling`은 `"none"`이다.** 이 앱은 클라이언트 라우팅이 없어서 없는 경로에는
+정직하게 404를 준다. `"single-page-application"`으로 바꾸면 없는 파일 요청에도 `index.html`이
+200으로 돌아와, `sync-data.js`가 스냅샷 대신 HTML을 받아 파싱에서 터진다 —
+실패 원인이 "파일 없음"이 아니라 "파싱 오류"로 둔갑해 디버깅이 어려워진다.
+
 ### 매일 갱신
 
-별도 설정이 없다. GitHub Actions가 스냅샷을 갱신해 커밋하면 **push가 Pages 재빌드를
+별도 설정이 없다. GitHub Actions가 스냅샷을 갱신해 커밋하면 **push가 Workers 재배포를
 자동으로 유발한다.** 데이터가 저장소 안에 있어서 가능한 구조이고, 그래서 Deploy Hook이 없다.
 
 데이터가 바뀌지 않은 날은 커밋 자체가 없으므로 불필요한 재배포도 일어나지 않는다.

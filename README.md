@@ -15,7 +15,7 @@
 
 ```
 [GitHub Actions cron, 매일 01시 KST]
-   safetydata.go.kr API → 정적 스냅샷(JSON) → 저장소에 커밋 → Cloudflare Pages
+   safetydata.go.kr API → 정적 스냅샷(JSON) → 저장소에 커밋 → Cloudflare Workers
                                                               │
                                         사용자가 온라인으로 접속 시 1회 다운로드
                                                               ▼

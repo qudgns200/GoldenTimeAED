@@ -1,7 +1,7 @@
 #!/bin/sh
 # 환경변수로부터 frontend/config.js를 생성한다.
 #
-# Cloudflare Pages의 빌드 명령으로 사용한다:
+# Cloudflare Workers 프로젝트의 빌드 명령으로 사용한다:
 #   sh frontend/build-config.sh
 # 출력 디렉토리는 frontend/ 그대로 두면 된다 (별도 번들링 없음).
 #

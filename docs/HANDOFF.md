@@ -49,29 +49,35 @@ cd frontend && python -m http.server 8000          # http://127.0.0.1:8000
 
 ---
 
-## 1. 최우선 — Pages 빌드 명령 되돌리기
+## 1. 최우선 — Workers 빌드 설정 고치기
 
-Phase 9로 빌드에서 스냅샷 생성 단계가 사라졌다. 대시보드가 아직 예전 명령이면
-`build_snapshot.py`가 없어서 **빌드가 실패한다.**
+배포는 **Pages가 아니라 Workers 정적 자산**으로 한다(이미 그렇게 연결되어 있다).
+대시보드 기본값이 아직 React 템플릿 기준(`npm run build`)이라 그대로 두면 **빌드가 실패한다** —
+`main`에는 `package.json`이 없다.
 
-Cloudflare → Workers & Pages → 프로젝트 → Settings → Builds & deployments
+Cloudflare → Workers & Pages → 프로젝트 → Settings → Build:
 
-```
-sh frontend/build-config.sh
-```
+| 항목 | 값 |
+|---|---|
+| Build command | `sh frontend/build-config.sh` |
+| Deploy command | `npx wrangler deploy` |
+| Root directory | `/` |
 
-- [ ] 빌드 명령을 위와 같이 변경 (뒤에 붙어 있던 `&& python3 backend/scripts/build_snapshot.py` 제거)
-- [ ] 출력 디렉토리가 `frontend`인지 확인
-- [ ] Root directory는 비워둘 것 (저장소 루트)
+- [ ] 위 세 값으로 변경 (Version command는 비우거나 그대로 둬도 무방)
+- [ ] **`wrangler.jsonc`의 `name`이 대시보드의 Worker 이름과 같은지 확인.**
+      다르면 `wrangler deploy`가 다른 이름의 Worker를 새로 만든다. 현재 값은 `goldentimeaed`
+- [ ] 빌드 변수(Settings → Build → Variables)에 `NAVER_MAP_CLIENT_ID` 등록
 
-**환경변수** — `NAVER_MAP_CLIENT_ID`만 있으면 된다.
-`SUPABASE_URL`·`SUPABASE_ANON_KEY`는 이제 쓰이지 않으므로 지워도 되고 놔둬도 무해하다.
+정적 자산 설정은 저장소의 [`wrangler.jsonc`](../wrangler.jsonc)에 있다 —
+`assets.directory`가 `./frontend`를 가리키고, 서버 코드가 없으므로 `main`이 없다.
+빌드가 네트워크를 타지 않아 빠르고 실패 지점이 없다.
 
-빌드가 네트워크를 타지 않게 되어 빠르고 실패 지점이 없다.
+> 저장소에 `cloudflare/workers-autoconfig` 브랜치가 있는데, 이건 **예전 React SPA 버전**
+> (Vite + 카카오맵)이라 현재 `main`과 무관하다. 배포 브랜치가 `main`인지 확인할 것.
 
 ### 1-2. 네이버 콘솔 도메인 등록
 
-- [ ] 네이버 클라우드 콘솔 → Maps → 웹 서비스 URL에 `*.pages.dev`(및 커스텀 도메인) 등록
+- [ ] 네이버 클라우드 콘솔 → Maps → 웹 서비스 URL에 `*.workers.dev`(및 커스텀 도메인) 등록
 - [ ] 로컬 개발용으로 `http://127.0.0.1:8000`도 등록
 
 미등록이면 지도가 안 뜨지만 앱이 죽지는 않는다 — 목록 뷰로 폴백하고 원인을 안내한다.
@@ -80,7 +86,7 @@ sh frontend/build-config.sh
 
 - [ ] GitHub 시크릿에서 `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CLOUDFLARE_DEPLOY_HOOK_URL` 제거
       — 워크플로가 더 이상 참조하지 않는다. 남은 필수 시크릿은 `SAFETYDATA_API_KEY` 하나
-- [ ] Cloudflare Pages의 Deploy hook 삭제 (push가 재빌드를 유발하므로 불필요)
+- [ ] Cloudflare의 Deploy hook 삭제 (push가 재배포를 유발하므로 불필요)
 - [ ] Supabase 프로젝트는 **당분간 지우지 말 것** — 되돌릴 일이 생기면 스키마를 다시 만들지 않아도 된다
 
 ---
@@ -90,7 +96,7 @@ sh frontend/build-config.sh
 - [x] 저장소 시크릿 `SAFETYDATA_API_KEY` 등록 (8/14 워크플로가 실제로 성공한 것으로 확인)
 - [ ] Actions 탭 → Sync AED data → **Run workflow**로 1회 수동 실행
 - [ ] 로그에서 62,000건 수집 확인
-- [ ] 스냅샷이 바뀌었으면 커밋이 생기고 Pages가 재빌드되는지 확인
+- [ ] 스냅샷이 바뀌었으면 커밋이 생기고 Workers가 재배포되는지 확인
       (변경이 없으면 "스냅샷 변경 없음 — 커밋하지 않습니다" 출력 후 정상 종료)
 
 워크플로에는 커밋 권한(`permissions: contents: write`)이 있어야 한다. 이미 설정되어 있다.

@@ -1,7 +1,7 @@
 """safetydata.go.kr AED 위치 데이터를 전량 수집해 정적 스냅샷 파일로 내보낸다.
 
 GitHub Actions cron이 이 스크립트를 직접 실행하고, 내용이 바뀐 날에만 결과를 커밋한다.
-커밋이 push되면 Cloudflare Pages가 자동으로 재빌드한다 (docs/OFFLINE_DESIGN.md).
+커밋이 push되면 Cloudflare Workers가 자동으로 재배포한다 (docs/OFFLINE_DESIGN.md).
 
 사용법:
     backend/.venv/Scripts/python.exe backend/sync.py

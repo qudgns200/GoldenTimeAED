@@ -87,12 +87,13 @@ GoldenTimeAED — AED 위치 지도 웹앱. 단계별(Phase) 진행 순서와 �
 
 ## Phase 6 — 배포
 
-- [x] **Cloudflare Pages로 결정.** 설정 파일은 [`frontend/_headers`](../frontend/_headers), 빌드는 [`frontend/build-config.sh`](../frontend/build-config.sh)
+- [x] **Cloudflare로 결정.** 헤더는 [`frontend/_headers`](../frontend/_headers), 빌드는 [`frontend/build-config.sh`](../frontend/build-config.sh)
+      (Pages로 시작했으나 Phase 9에서 **Workers 정적 자산**으로 정리됨 — [`wrangler.jsonc`](../wrangler.jsonc))
 - [x] Cloudflare 대시보드에서 저장소 연결 (프로젝트 생성·배포 완료)
-- [ ] 빌드 명령을 `sh frontend/build-config.sh`로 되돌리기 — Phase 9에서 스냅샷 생성 단계가
-      사라졌으므로, 예전 명령이 남아 있으면 `build_snapshot.py`가 없어 **빌드가 실패한다**
-- [ ] 배포 환경에 `NAVER_MAP_CLIENT_ID` 주입 (`SUPABASE_*`는 더 이상 쓰이지 않음)
-- [ ] 네이버 클라우드 콘솔에 배포 도메인(`*.pages.dev`)을 웹 서비스 URL로 등록
+- [ ] 대시보드 빌드 설정을 Workers 기준으로 변경 (Phase 9 항목 참고).
+      기본값(`npm run build`)이 남아 있으면 `package.json`이 없어 **빌드가 실패한다**
+- [ ] 빌드 변수에 `NAVER_MAP_CLIENT_ID` 주입 (`SUPABASE_*`는 더 이상 쓰이지 않음)
+- [ ] 네이버 클라우드 콘솔에 배포 도메인(`*.workers.dev`)을 웹 서비스 URL로 등록
 
 **완료 기준**: 배포된 URL에서 지도와 마커가 정상 표시됨.
 
@@ -123,7 +124,7 @@ GoldenTimeAED — AED 위치 지도 웹앱. 단계별(Phase) 진행 순서와 �
 **실시간 조회 → 스냅샷 기반 전환**
 
 - [x] `backend/scripts/build_snapshot.py`: Supabase 전량 → `data/aed-snapshot.json` + `aed-meta.json`
-      (Pages 빌드 환경에 의존성을 추가하지 않도록 stdlib만 사용)
+      (배포 빌드 환경에 의존성을 추가하지 않도록 stdlib만 사용)
 - [x] 프론트엔드에서 Supabase 직접 조회 제거 — supabase-js CDN 및 `SUPABASE_ANON_KEY` 노출 제거
 - [x] `data-store.js`(IndexedDB) + `sync-data.js`(meta 비교 후 조건부 다운로드)
 - [x] `build-config.sh`에서 Supabase 키 제거, `.gitignore`에 `frontend/data/` 추가
@@ -146,8 +147,8 @@ GoldenTimeAED — AED 위치 지도 웹앱. 단계별(Phase) 진행 순서와 �
 - [ ] 실기기 검증: 나침반(iOS 권한 버튼), 홈 화면 설치 후 비행기 모드 실행
 
 > **Phase 9에서 대체됨** — Deploy Hook과 `CLOUDFLARE_DEPLOY_HOOK_URL` 시크릿, 그리고
-> Pages 빌드에서 스냅샷을 만들던 단계가 모두 사라졌다. 스냅샷이 저장소에 커밋되므로
-> push가 곧 재빌드다. Pages 빌드 명령은 `sh frontend/build-config.sh`로 되돌아갔다.
+> 빌드에서 스냅샷을 만들던 단계가 모두 사라졌다. 스냅샷이 저장소에 커밋되므로
+> push가 곧 재배포다. 빌드 명령은 `sh frontend/build-config.sh`로 되돌아갔다.
 
 **완료 기준**: 온라인 1회 방문 후 비행기 모드에서 앱이 뜨고, 저장된 데이터로 주변 AED가 거리순으로 표시됨.
 
@@ -183,11 +184,13 @@ Phase 8에서 프론트엔드가 Supabase를 직접 조회하지 않게 되면�
 - [x] `frontend/data/`를 커밋 대상으로 전환 (`.gitignore`에서 제거)
 - [x] 워크플로에 커밋·push 단계 추가, Deploy Hook 단계 제거
 - [x] `supabase/schema.sql`, `verify_rls.py`, `build_snapshot.py` 삭제, `requirements.txt`에서 `supabase` 제거
-- [ ] Pages 빌드 명령을 `sh frontend/build-config.sh`로 되돌리기 (대시보드)
-- [ ] Pages 환경변수에서 `SUPABASE_*` 제거, GitHub 시크릿에서 `CLOUDFLARE_DEPLOY_HOOK_URL` 제거 (선택)
+- [x] Workers 정적 자산 설정(`wrangler.jsonc`, `frontend/.assetsignore`) 추가
+- [ ] 대시보드 빌드 설정 변경: Build `sh frontend/build-config.sh` / Deploy `npx wrangler deploy` / Root `/`
+- [ ] `wrangler.jsonc`의 `name`이 대시보드 Worker 이름과 같은지 확인
+- [ ] GitHub 시크릿에서 `SUPABASE_*`·`CLOUDFLARE_DEPLOY_HOOK_URL` 제거 (선택)
 
 **완료 기준**: `python backend/sync.py`가 스냅샷을 만들고, 연속 재실행 시 파일을 건드리지 않으며,
-Actions가 변경분만 커밋해 Pages가 자동 재빌드된다.
+Actions가 변경분만 커밋해 Workers가 자동 재배포된다.
 
 검증 결과 (2026-08-18 실측):
 
@@ -195,7 +198,7 @@ Actions가 변경분만 커밋해 Pages가 자동 재빌드된다.
 - **연속 2회 실행 시 두 번째가 파일을 바이트 단위로 건드리지 않음** (mtime·sha256 동일) —
   이 설계의 핵심 가정이 검증되었다
 - id 61,717개 전부 정수·중복 0건, 최대값이 `2^53` 안 (JS `Number` 안전)
-- 시크릿이 `SAFETYDATA_API_KEY` 하나로 줄고, Pages 빌드가 네트워크를 타지 않게 됨
+- 시크릿이 `SAFETYDATA_API_KEY` 하나로 줄고, 배포 빌드가 네트워크를 타지 않게 됨
 
 > 되돌릴 필요가 생기면 삭제된 파일은 git 히스토리에 남아 있다. Supabase 프로젝트 자체도
 > 당분간 지우지 않는 것을 권한다.
