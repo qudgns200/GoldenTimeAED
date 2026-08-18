@@ -15,7 +15,7 @@
 
 ```
 [GitHub Actions cron, 매일 01시 KST]
-   safetydata.go.kr API → Supabase → 정적 스냅샷(JSON) → Cloudflare Pages
+   safetydata.go.kr API → 정적 스냅샷(JSON) → 저장소에 커밋 → Cloudflare Pages
                                                               │
                                         사용자가 온라인으로 접속 시 1회 다운로드
                                                               ▼
@@ -24,8 +24,9 @@
                                                   이후 오프라인에서도 동작
 ```
 
-상시 구동되는 API 서버가 없다. 데이터는 하루 1회만 갱신되면 충분하고,
+상시 구동되는 API 서버도, 데이터베이스도 없다. 데이터는 하루 1회만 갱신되면 충분하고,
 프론트엔드는 정적 파일과 기기에 저장된 데이터만으로 동작한다.
+스냅샷이 저장소에 있으므로 push가 곧 배포이고, 필요한 시크릿은 `SAFETYDATA_API_KEY` 하나다.
 
 ## 문서
 

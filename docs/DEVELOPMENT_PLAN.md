@@ -56,10 +56,11 @@ GoldenTimeAED — AED 위치 지도 웹앱. 단계별(Phase) 진행 순서와 �
 ## Phase 4 — GitHub Actions 스케줄러
 
 - [x] `.github/workflows/sync-aed.yml` 작성: cron `17 16 * * *` (KST 01:17) 또는 원하는 새벽 1~2시대 시각
-- [ ] 저장소 시크릿 등록: `SAFETYDATA_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+- [x] 저장소 시크릿 등록 (8/14 워크플로가 실제로 성공한 것으로 확인)
+      — **Phase 9 이후 필요한 시크릿은 `SAFETYDATA_API_KEY` 하나뿐이다**
 - [ ] 워크플로우 수동 실행(`workflow_dispatch`)으로 1회 테스트
 
-**완료 기준**: Actions 탭에서 워크플로우 성공 실행 확인, Supabase 데이터 갱신 확인.
+**완료 기준**: Actions 탭에서 워크플로우 성공 실행 확인, 스냅샷 갱신 확인.
 
 ## Phase 5 — 프론트엔드
 
@@ -87,9 +88,10 @@ GoldenTimeAED — AED 위치 지도 웹앱. 단계별(Phase) 진행 순서와 �
 ## Phase 6 — 배포
 
 - [x] **Cloudflare Pages로 결정.** 설정 파일은 [`frontend/_headers`](../frontend/_headers), 빌드는 [`frontend/build-config.sh`](../frontend/build-config.sh)
-- [ ] Cloudflare 대시보드에서 저장소 연결 + 빌드 설정
-      (빌드 명령은 Phase 8에서 `sh frontend/build-config.sh && python3 backend/scripts/build_snapshot.py`로 변경됨 / 출력 `frontend`)
-- [ ] 배포 환경에 `NAVER_MAP_CLIENT_ID`(config.js용), `SUPABASE_URL`·`SUPABASE_ANON_KEY`(스냅샷 생성용) 주입
+- [x] Cloudflare 대시보드에서 저장소 연결 (프로젝트 생성·배포 완료)
+- [ ] 빌드 명령을 `sh frontend/build-config.sh`로 되돌리기 — Phase 9에서 스냅샷 생성 단계가
+      사라졌으므로, 예전 명령이 남아 있으면 `build_snapshot.py`가 없어 **빌드가 실패한다**
+- [ ] 배포 환경에 `NAVER_MAP_CLIENT_ID` 주입 (`SUPABASE_*`는 더 이상 쓰이지 않음)
 - [ ] 네이버 클라우드 콘솔에 배포 도메인(`*.pages.dev`)을 웹 서비스 URL로 등록
 
 **완료 기준**: 배포된 URL에서 지도와 마커가 정상 표시됨.
@@ -141,9 +143,11 @@ GoldenTimeAED — AED 위치 지도 웹앱. 단계별(Phase) 진행 순서와 �
 **배포 연동**
 
 - [x] `sync-aed.yml`에 Cloudflare Pages Deploy Hook 호출 단계 추가
-- [ ] 저장소 시크릿 `CLOUDFLARE_DEPLOY_HOOK_URL` 등록
-- [ ] Pages 빌드 명령을 `sh frontend/build-config.sh && python3 backend/scripts/build_snapshot.py`로 변경
 - [ ] 실기기 검증: 나침반(iOS 권한 버튼), 홈 화면 설치 후 비행기 모드 실행
+
+> **Phase 9에서 대체됨** — Deploy Hook과 `CLOUDFLARE_DEPLOY_HOOK_URL` 시크릿, 그리고
+> Pages 빌드에서 스냅샷을 만들던 단계가 모두 사라졌다. 스냅샷이 저장소에 커밋되므로
+> push가 곧 재빌드다. Pages 빌드 명령은 `sh frontend/build-config.sh`로 되돌아갔다.
 
 **완료 기준**: 온라인 1회 방문 후 비행기 모드에서 앱이 뜨고, 저장된 데이터로 주변 AED가 거리순으로 표시됨.
 
@@ -166,6 +170,36 @@ GoldenTimeAED — AED 위치 지도 웹앱. 단계별(Phase) 진행 순서와 �
 - 네이버 SDK는 **키가 무효여도 스크립트 로드는 "성공"한 뒤 내부에서 터진다.** `script.onload`만
   믿으면 안 되므로 `naver.maps.Map` 존재를 확인하고 `MapView.init`을 try/catch로 감싼다.
 
+## Phase 9 — Supabase 제거
+
+Phase 8에서 프론트엔드가 Supabase를 직접 조회하지 않게 되면서, Supabase는 배치가 쓰고
+빌드가 되읽기만 하는 중간 저장소로 남았다. 존재 이유가 사라진 반면 비용은 그대로였다 —
+프리티어 7일 미사용 자동 정지, 시크릿 3개의 이중 관리, 빌드마다 6만 행 재조회,
+그리고 **Deploy Hook이라는 배선 자체가 데이터가 저장소 밖에 있기 때문에** 필요했다.
+
+- [x] `backend/sync.py`를 API → 정적 스냅샷 직행으로 전환 (`build_snapshot.py` 흡수)
+- [x] 행 내용이 바뀐 날에만 파일을 쓰도록 해 매일 10MB 커밋이 쌓이는 것을 방지
+- [x] 좌표 기반 자연키로 안정 정렬 + sha1 기반 안정 id (delta 압축이 먹게)
+- [x] `frontend/data/`를 커밋 대상으로 전환 (`.gitignore`에서 제거)
+- [x] 워크플로에 커밋·push 단계 추가, Deploy Hook 단계 제거
+- [x] `supabase/schema.sql`, `verify_rls.py`, `build_snapshot.py` 삭제, `requirements.txt`에서 `supabase` 제거
+- [ ] Pages 빌드 명령을 `sh frontend/build-config.sh`로 되돌리기 (대시보드)
+- [ ] Pages 환경변수에서 `SUPABASE_*` 제거, GitHub 시크릿에서 `CLOUDFLARE_DEPLOY_HOOK_URL` 제거 (선택)
+
+**완료 기준**: `python backend/sync.py`가 스냅샷을 만들고, 연속 재실행 시 파일을 건드리지 않으며,
+Actions가 변경분만 커밋해 Pages가 자동 재빌드된다.
+
+검증 결과 (2026-08-18 실측):
+
+- 61,717건 / raw **10.8MB** / gzip 2.4MB, 수집 13.4초 (원본 62,000건 중 중복 283건 제거)
+- **연속 2회 실행 시 두 번째가 파일을 바이트 단위로 건드리지 않음** (mtime·sha256 동일) —
+  이 설계의 핵심 가정이 검증되었다
+- id 61,717개 전부 정수·중복 0건, 최대값이 `2^53` 안 (JS `Number` 안전)
+- 시크릿이 `SAFETYDATA_API_KEY` 하나로 줄고, Pages 빌드가 네트워크를 타지 않게 됨
+
+> 되돌릴 필요가 생기면 삭제된 파일은 git 히스토리에 남아 있다. Supabase 프로젝트 자체도
+> 당분간 지우지 않는 것을 권한다.
+
 ---
 
 ## 진행 순서 요약
@@ -174,9 +208,11 @@ GoldenTimeAED — AED 위치 지도 웹앱. 단계별(Phase) 진행 순서와 �
 Phase 0 (초기화) → Phase 1 (API 검증) → Phase 2 (DB 스키마)
    → Phase 3 (ETL) → Phase 4 (스케줄러) → Phase 5 (프론트엔드)
    → Phase 6 (배포) → Phase 7 (QA) → Phase 8 (오프라인 지원)
+   → Phase 9 (Supabase 제거)
 ```
 
-Phase 1은 다른 모든 단계(스키마, ETL, 문서)의 전제 조건이므로 가장 먼저 실제 키로 검증할 것을 권장한다.
+Phase 1은 다른 모든 단계의 전제 조건이므로 가장 먼저 실제 키로 검증할 것을 권장한다.
 
-Phase 8은 Phase 5의 데이터 조회 방식을 대체하므로, Phase 5·6의 일부 항목(1000행 상한 대응,
-뷰포트 차단, 빌드 명령, 주입 환경변수)은 Phase 8 기준으로 읽어야 한다.
+**Phase 2와 Phase 3의 upsert 부분은 Phase 9에서 폐기되었다.** Phase 5의 데이터 조회 방식은
+Phase 8에서 대체되었고, Phase 6·8의 배포 배선은 Phase 9에서 단순화되었다.
+과거 Phase의 체크박스는 그 시점의 기록으로 남겨두었으니, **현재 구조는 Phase 8·9 기준으로 읽을 것.**

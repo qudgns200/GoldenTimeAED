@@ -106,57 +106,60 @@ GET https://www.safetydata.go.kr/V2/api/DSSP-IF-00068
 
 ---
 
-## 2. 내부 데이터 모델 — Supabase `aed_locations`
+## 2. 내부 데이터 모델 — 정적 스냅샷
 
-정의: `supabase/schema.sql`
+데이터베이스는 없다. `backend/sync.py`가 위 API 응답을 변환해
+`frontend/data/aed-snapshot.json`으로 쓰고, 이 파일이 저장소에 커밋된다.
 
-| 컬럼 | 타입 | 설명 |
+키 이름을 매 행마다 반복하지 않는 배열 포맷이라 객체 배열보다 약 40% 작다.
+컬럼 순서는 파일의 `fields`가 선언하며, `frontend/sync-data.js`가 그 순서를 읽어 쓴다
+(하드코딩하지 않으므로 컬럼이 추가·재배치되어도 조용히 어긋나지 않는다).
+
+```json
+{
+  "generated_at": "2026-08-18T14:35:57+00:00",
+  "count": 61717,
+  "fields": ["id", "org_name", "install_place", "address_road", "lat", "lng", "phone"],
+  "rows": [[86302289748278, "제주보건소", "1층 로비", "제주특별자치도 …", 33.11653, 126.26719, "064*******"]]
+}
+```
+
+| 필드 | 원본 | 비고 |
 |---|---|---|
-| `id` | bigint (PK) | 내부 자동 증가 ID |
-| `source_id` | text (unique) | 원본 `SN`(일련번호) |
-| `org_name` | text | 원본 `MNG_INST_NM` (관리기관명) |
-| `install_place` | text | 원본 `INSTL_PSTN` (설치위치 상세) |
-| `address_road` | text | 원본 `ADDR` (도로명주소 전체) |
-| `latitude` | double precision | 원본 `LAT` |
-| `longitude` | double precision | 원본 `LOT` |
-| `phone` | text | 원본 `MNGR_TELNO` (일부 마스킹) |
-| `manager_name` | text | 원본 `MNGR_NM` (일부 마스킹) |
-| `maker_name` | text | 원본 `MKR_NM` (제조사명) |
-| `model_name` | text | 원본 `MDL_NM` (모델명) |
-| `sido_name` | text | 원본 `CTPV_NM` (시도명) |
-| `sigungu_name` | text | 원본 `SE` (시군구명) |
-| `synced_at` | timestamptz | 마지막 동기화 시각 |
+| `id` | (파생) | 자연키 `lat\|lng\|org_name\|install_place`의 sha1 앞 12자리를 정수로. **원본 `SN`을 쓰지 않는다** |
+| `org_name` | `MNG_INST_NM` | 관리기관명 |
+| `install_place` | `INSTL_PSTN` | 설치위치 상세 |
+| `address_road` | `ADDR` | 도로명주소 전체 |
+| `lat` / `lng` | `LAT` / `LOT` | 소수점 5자리(약 1.1m)로 반올림 |
+| `phone` | `MNGR_TELNO` | 일부 마스킹된 원본 그대로 |
 
-**RLS 정책**: `anon`/`authenticated` 역할은 SELECT만 허용. INSERT/UPDATE/UPSERT는 `service_role`(백엔드 ETL)만 가능 — RLS를 우회하므로 별도 정책 불필요.
+`MNGR_NM`·`MKR_NM`·`MDL_NM`·`CTPV_NM`·`SE`는 화면에서 쓰지 않아 스냅샷에 넣지 않는다.
+좌표가 없는 행은 지도에도 거리순 목록에도 올릴 수 없으므로 제외한다.
+자연키가 같은 행은 중복으로 보고 하나만 남긴다(실측 283건).
+
+`aed-meta.json`은 `generated_at`과 `count`만 담은 수백 바이트 파일로, 앱이 이것만 먼저 받아
+갱신 여부를 판단한다.
+
+### id를 원본 `SN`으로 만들지 않는 이유
+
+위 경고대로 `SN`은 재발행 때마다 재할당된다. 또한 **정렬과 id가 결정적이어야**
+내용이 같은 날 파일이 바이트 단위로 동일해지고, 그래야 불필요한 커밋과 재배포가 없다.
+순번을 id로 쓰면 행 하나만 추가돼도 이후 전체가 밀려 파일 전체가 바뀐다.
 
 ---
 
 ## 3. 프론트엔드 조회 방식
 
-정적 프론트엔드는 백엔드 API를 거치지 않고 Supabase JS client로 직접 조회한다.
+프론트엔드는 어떤 API도 조회하지 않는다. 같은 도메인의 정적 파일만 읽는다.
 
-```html
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+1. `data/aed-meta.json`(수백 바이트)을 먼저 받아 저장본의 `generated_at`과 비교
+2. 다르면 `data/aed-snapshot.json`(raw 10.8MB / 전송 2.4MB)을 받아 IndexedDB에 저장
+3. 이후 온라인·오프라인 상관없이 저장본에서 읽음
 
-  async function loadAEDInBounds(swLat, swLng, neLat, neLng) {
-    const { data, error } = await supabase
-      .from('aed_locations')
-      .select('id, org_name, install_place, latitude, longitude, phone')
-      .gte('latitude', swLat).lte('latitude', neLat)
-      .gte('longitude', swLng).lte('longitude', neLng);
-
-    if (error) throw error;
-    return data; // 네이버 지도 마커 렌더링에 사용
-  }
-</script>
-```
-
-지도 이동/줌 변경(`bounds_changed`) 이벤트마다 현재 뷰포트 범위로 위 쿼리를 다시 호출해 마커를 갱신하는 방식을 권장한다.
+구현은 `frontend/sync-data.js`(다운로드 판단)와 `frontend/data-store.js`(IndexedDB)에 있다.
+설계 근거는 [`OFFLINE_DESIGN.md`](OFFLINE_DESIGN.md) 참고.
 
 ## 4. 참고 링크
 
 - [safetydata.go.kr AED 데이터셋](https://www.safetydata.go.kr/disaster-data/view?dataSn=59)
 - [네이버 지도 JS API v3 문서](https://navermaps.github.io/maps.js.ncp/)
-- [Supabase JS client 문서](https://supabase.com/docs/reference/javascript/introduction)

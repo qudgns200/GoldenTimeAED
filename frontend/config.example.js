@@ -1,9 +1,8 @@
 // 이 파일을 config.js로 복사한 뒤 실제 값을 채운다. config.js는 커밋하지 않는다.
 //   cp frontend/config.example.js frontend/config.js
 //
-// Supabase 키는 여기에 없다. 프론트엔드는 Supabase를 직접 조회하지 않고
-// backend/scripts/build_snapshot.py가 만든 정적 스냅샷(data/aed-snapshot.json)만 읽는다.
-// 자세한 구조는 docs/OFFLINE_DESIGN.md 참고.
+// 데이터 관련 설정은 여기에 없다. 프론트엔드는 저장소에 커밋된 정적 스냅샷
+// (data/aed-snapshot.json)만 읽는다. 자세한 구조는 docs/OFFLINE_DESIGN.md 참고.
 //
 // 아래 값은 공개되어도 안전하다 — 네이버 콘솔의 리퍼러 화이트리스트로 보호된다.
 // 그럼에도 커밋하지 않는 이유는 키 교체와 환경별 분리를 쉽게 하기 위해서다.

@@ -22,7 +22,7 @@ AED 위치를 안내하는 정적 프론트엔드. 빌드 도구 없이 파일�
 | `config.example.js` | 설정 템플릿 (커밋됨) |
 | `config.js` | 실제 설정 (**커밋 안 함** — `build-config.sh`가 생성) |
 | `build-config.sh` | 환경변수로부터 `config.js`를 생성 |
-| `data/` | AED 스냅샷 (**커밋 안 함** — `build_snapshot.py`가 생성) |
+| `data/` | AED 스냅샷 (**커밋 대상** — `backend/sync.py`가 생성) |
 | `_headers` | Cloudflare Pages 헤더 규칙 (보안 헤더 + 캐시 무효화) |
 
 빌드 도구가 없으므로 각 파일은 전역 상수 하나를 노출하는 IIFE다.
@@ -33,12 +33,14 @@ AED 위치를 안내하는 정적 프론트엔드. 빌드 도구 없이 파일�
 ```bash
 # 저장소 루트에서
 set -a && . ./.env && set +a
-sh frontend/build-config.sh                     # config.js 생성
-python backend/scripts/build_snapshot.py        # data/ 생성 (Supabase 조회)
+sh frontend/build-config.sh                     # config.js 생성 (NAVER_MAP_CLIENT_ID 필요)
 
 cd frontend && python -m http.server 8000
 # http://127.0.0.1:8000 접속
 ```
+
+`data/`의 스냅샷은 저장소에 커밋되어 있어 clone 직후 바로 동작한다.
+최신 데이터가 필요할 때만 `python backend/sync.py`를 돌리면 된다.
 
 **`file://`로 직접 열지 말 것.** 서비스워커가 등록되지 않아 오프라인 지원이 동작하지 않고,
 네이버 지도도 리퍼러 검사에 걸려 인증에 실패한다. 로컬 개발 시 네이버 콘솔 웹 서비스 URL에
@@ -62,7 +64,7 @@ Cloudflare 대시보드 → Workers & Pages → Create → Pages → Connect to 
 | 항목 | 값 |
 |---|---|
 | Framework preset | None |
-| Build command | `sh frontend/build-config.sh && python3 backend/scripts/build_snapshot.py` |
+| Build command | `sh frontend/build-config.sh` |
 | Build output directory | `frontend` |
 | Root directory | (비움 — 저장소 루트) |
 
@@ -72,12 +74,9 @@ Cloudflare 대시보드 → Workers & Pages → Create → Pages → Connect to 
 |---|---|---|
 | `NAVER_MAP_CLIENT_ID` | `config.js` 생성 | 없으면 빌드 실패 |
 | `NAVER_MAP_AUTH_PARAM` | `config.js` 생성 | 선택. 기본 `ncpKeyId`, 구 콘솔 키는 `ncpClientId` |
-| `SUPABASE_URL` | 스냅샷 생성 | |
-| `SUPABASE_ANON_KEY` | 스냅샷 생성 | RLS로 SELECT만 허용되므로 공개되어도 안전. **빌드 시점에만 쓰이고 `config.js`에는 들어가지 않는다** |
 
-`build_snapshot.py`는 stdlib만 사용하므로 Pages 빌드에 pip 설치 단계가 필요 없다.
-값이 없거나 조회 결과가 비면 exit 1로 빌드를 실패시킨다 — 빈 스냅샷이 배포되면
-오프라인 사용자가 조용히 빈 화면을 보게 되기 때문이다.
+AED 데이터는 빌드가 만들지 않는다. `frontend/data/`의 스냅샷은 저장소에 커밋되어 있고
+GitHub Actions가 갱신한다. 따라서 **빌드는 네트워크를 타지 않아** 빠르고 실패 지점이 없다.
 
 배포 후 **네이버 클라우드 콘솔에 배포 도메인(`*.pages.dev` 및 커스텀 도메인)을
 웹 서비스 URL로 등록**해야 지도가 뜬다. 미등록 시 앱은 목록 뷰로 폴백하고 원인을 안내한다.
@@ -88,14 +87,15 @@ Cloudflare 대시보드 → Workers & Pages → Create → Pages → Connect to 
 
 ### 매일 갱신
 
-Pages는 커밋 푸시 때만 빌드하므로, GitHub Actions ETL이 끝나면 Deploy Hook으로 재빌드를 건다.
-Settings → Builds & deployments → Deploy hooks에서 훅을 만들고 그 URL을 저장소 시크릿
-`CLOUDFLARE_DEPLOY_HOOK_URL`에 등록한다 (`.github/workflows/sync-aed.yml` 마지막 단계).
+별도 설정이 없다. GitHub Actions가 스냅샷을 갱신해 커밋하면 **push가 Pages 재빌드를
+자동으로 유발한다.** 데이터가 저장소 안에 있어서 가능한 구조이고, 그래서 Deploy Hook이 없다.
+
+데이터가 바뀌지 않은 날은 커밋 자체가 없으므로 불필요한 재배포도 일어나지 않는다.
 
 ## 설계 메모
 
-**스냅샷 기반 조회** — 프론트엔드는 Supabase를 직접 조회하지 않는다. 하루 1회 생성되는
-`data/aed-snapshot.json`(전국 62,000건, 압축 전송 2~3MB)을 최초 1회 받아 IndexedDB에 저장하고,
+**스냅샷 기반 조회** — 프론트엔드는 어떤 API도 조회하지 않는다. 저장소에 커밋된
+`data/aed-snapshot.json`(전국 61,717건, raw 10.8MB / 압축 전송 2.4MB)을 최초 1회 받아 IndexedDB에 저장하고,
 이후에는 온라인/오프라인 상관없이 저장본에서 읽는다. 갱신 여부는 수백 바이트짜리
 `data/aed-meta.json`을 먼저 받아 판단하므로, 데이터가 그대로면 큰 파일을 다시 받지 않는다.
 

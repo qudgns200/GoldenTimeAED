@@ -57,11 +57,11 @@ AED는 평상시엔 쓸 일이 없다가 심정지 상황에 딱 한 번 쓰는 
 [1단계] 매일 01:17 KST — 서버 쪽 (사용자와 무관하게 알아서 돌아감)
 ──────────────────────────────────────────────────────────────
   GitHub Actions (.github/workflows/sync-aed.yml)
-    → safetydata.go.kr API 호출          (backend/sync.py)
-    → Supabase upsert
-    → Cloudflare Pages Deploy Hook 호출
-         └→ Pages 빌드가 Supabase에서 전량 조회해
-            frontend/data/aed-snapshot.json 생성  (backend/scripts/build_snapshot.py)
+    → safetydata.go.kr API 전량 호출      (backend/sync.py)
+    → 변환·중복제거·안정정렬 후
+       frontend/data/aed-snapshot.json 생성
+    → 행 내용이 바뀐 날에만 커밋 & push
+         └→ push가 Cloudflare Pages 재빌드를 자동으로 유발
 
   결과: 인터넷에 "항상 최신인 파일" 한 개가 놓여 있음
 
@@ -96,9 +96,15 @@ AED는 평상시엔 쓸 일이 없다가 심정지 상황에 딱 한 번 쓰는 
   응급 상황에 아무것도 못 본다.
 - **사용자가 2주 동안 앱을 안 열었다면** 기기에는 2주 전 데이터가 있다. AED 위치는 자주
   바뀌지 않으므로 실용상 문제가 없고, 화면 상단 배너에 "마지막 갱신 8월 18일"을 표시한다.
-- **스냅샷은 저장소에 커밋하지 않는다** (`.gitignore`의 `frontend/data/`). 매일 갱신되는
-  ~9MB 파일이라 커밋하면 저장소가 1년에 1GB 가까이 불어난다. Pages 빌드 시점에 생성한다.
-- **Pages는 커밋 푸시 때만 빌드**하므로, ETL이 끝나면 Deploy Hook으로 재빌드를 직접 건다.
+- **스냅샷은 저장소에 커밋한다.** Pages는 커밋 푸시 때만 빌드하므로, 데이터가 저장소 안에
+  있으면 **push가 곧 배포**가 되어 Deploy Hook이라는 배선이 통째로 사라진다. 버전 관리되어
+  롤백과 diff 확인도 쉽다.
+- **매일 10MB가 쌓이지 않는 이유**: `sync.py`가 새로 만든 행 배열을 커밋된 것과 비교해
+  **다를 때만** 파일을 쓴다. 같은 날은 파일이 바이트 단위로 그대로라 커밋도, 재빌드도 없다.
+  그래서 `generated_at`의 의미도 "동기화를 돌린 시각"이 아니라 **"데이터가 마지막으로 바뀐 시각"**이다.
+- **이게 성립하려면 정렬과 id가 결정적이어야 한다.** 좌표 기반 자연키로 정렬하고 그 sha1에서
+  id를 만드는 이유가 이것이다. 순번을 id로 쓰면 행 하나만 추가돼도 이후 전체가 밀려
+  파일 전체가 바뀌고, git이 delta를 잡지 못한다. **이 규칙을 깨지 말 것.**
 
 ---
 
@@ -184,8 +190,9 @@ iOS Safari는 ITP 정책상 7일 동안 방문하지 않은 사이트의 서비�
 | 스냅샷 다운로드 실패 | 저장본으로 계속 동작 |
 | 저장본도 없음 | "인터넷에 연결한 상태로 한 번 열어주세요" 안내 |
 
-프론트엔드는 더 이상 Supabase를 직접 조회하지 않으므로 supabase-js CDN 의존성과
-`SUPABASE_ANON_KEY` 노출이 함께 사라졌다. anon 키는 이제 Pages 빌드 시점에만 쓰인다.
+프론트엔드는 어떤 API도 직접 조회하지 않으므로 supabase-js CDN 의존성과 키 노출이 함께 사라졌다.
+이후 Supabase 자체를 걷어내면서(→ API에서 받아 바로 스냅샷을 만들어 커밋) 남아 있던
+빌드 시점 의존성도 없어졌다. 지금 프론트엔드가 읽는 것은 같은 도메인의 정적 파일뿐이다.
 
 ---
 
@@ -195,8 +202,7 @@ iOS Safari는 ITP 정책상 7일 동안 방문하지 않은 사이트의 서비�
 
 ```bash
 set -a && . ./.env && set +a
-sh frontend/build-config.sh
-python backend/scripts/build_snapshot.py
+sh frontend/build-config.sh          # config.js 생성 (data/는 이미 커밋되어 있다)
 
 cd frontend && python -m http.server 8000
 ```
