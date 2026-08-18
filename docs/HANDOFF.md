@@ -1,11 +1,25 @@
 # 이어서 할 일 (인수인계)
 
-다른 PC에서 작업을 이어받기 위한 문서. 마지막 갱신: 2026-08-18
+다른 PC에서 작업을 이어받기 위한 문서. 마지막 갱신: 2026-08-19 (`6e5fd34`)
 
-**현재 상태**: 오프라인 지원(Phase 8)에 이어 **Supabase 제거(Phase 9)까지 완료**.
-이제 데이터베이스가 없다. API에서 받아 바로 정적 스냅샷을 만들어 저장소에 커밋한다.
+**현재 상태**: 오프라인 지원(Phase 8) → **Supabase 제거(Phase 9)** → **Workers 배포 설정 정리**까지 완료.
+데이터베이스가 없다. API에서 받아 바로 정적 스냅샷을 만들어 저장소에 커밋하고,
+push가 곧 Cloudflare Workers 재배포다.
 
-**남은 것**: 코드가 아니라 **대시보드 설정 한 줄과 실기기 검증**이다.
+**코드 작업은 남아 있지 않다.** 남은 것은 전부 **대시보드 설정과 실기기 검증**이다.
+
+## 지금 당장 해야 할 것 (순서대로)
+
+| # | 할 일 | 왜 급한가 | 소요 |
+|---|---|---|---|
+| 1 | [Workers 빌드 설정 변경](#1-workers-빌드-설정-고치기-최우선) | **지금 배포가 실패 상태다.** 기본값 `npm run build`인데 `package.json`이 없다 | 2분 |
+| 2 | [빌드 변수 `NAVER_MAP_CLIENT_ID` 등록](#1-workers-빌드-설정-고치기-최우선) | 없으면 빌드가 exit 1로 실패한다 | 1분 |
+| 3 | [`wrangler.jsonc`의 `name` 일치 확인](#1-workers-빌드-설정-고치기-최우선) | 다르면 엉뚱한 이름의 Worker가 새로 생긴다 | 1분 |
+| 4 | [네이버 콘솔에 배포 도메인 등록](#1-2-네이버-콘솔-도메인-등록) | 미등록이면 지도가 안 뜬다 (앱은 목록으로 폴백) | 3분 |
+| 5 | [Actions 수동 1회 실행](#2-github-actions-배치) | 커밋→재배포 연결이 실제로 도는지 확인 | 5분 |
+| 6 | [실기기 검증](#3-실기기-검증-헤드리스로는-불가능) | 나침반·오프라인은 헤드리스로 확인 불가 | 20분 |
+
+1~3번을 끝내면 배포가 살아난다. 4번까지 하면 지도까지 정상이다.
 
 > 아래 체크박스 중 이미 해두신 게 있으면 그대로 체크하고 넘어가면 된다.
 > 실제 콘솔 상태와 다를 수 있다.
@@ -49,7 +63,7 @@ cd frontend && python -m http.server 8000          # http://127.0.0.1:8000
 
 ---
 
-## 1. 최우선 — Workers 빌드 설정 고치기
+## 1. Workers 빌드 설정 고치기 (최우선)
 
 배포는 **Pages가 아니라 Workers 정적 자산**으로 한다(이미 그렇게 연결되어 있다).
 대시보드 기본값이 아직 React 템플릿 기준(`npm run build`)이라 그대로 두면 **빌드가 실패한다** —
@@ -166,6 +180,30 @@ Cloudflare → Workers & Pages → 프로젝트 → Settings → Build:
 3. **오프라인 실지도** — MapLibre GL JS + PMTiles 자체 호스팅.
    한국 전역 타일이 수백 MB라 R2 등 별도 스토리지가 필요하고 지도 스택을
    전면 교체해야 한다. 범위가 크니 신중히.
+
+---
+
+## 7. 최근 변경 이력
+
+한동안 안 보다가 돌아왔다면 이것만 알면 된다. 구조가 두 번 크게 바뀌었다.
+
+| 커밋 | 무엇이 바뀌었나 |
+|---|---|
+| `5e2af0c` | **Phase 8 — 오프라인 지원.** 실시간 조회를 스냅샷 + IndexedDB + PWA로 재설계 |
+| `ab5ffc8` | **Phase 9 — Supabase 제거.** API에서 받아 바로 스냅샷을 만들어 커밋. DB 없음 |
+| `6e5fd34` | **Workers 배포 설정 정리.** `wrangler.jsonc` 추가, 문서를 Pages → Workers로 정정 |
+
+이 과정에서 **사라진 것들** (오래된 문서·대화에서 언급되면 무시할 것):
+
+- Supabase 전체 — `supabase/schema.sql`, `verify_rls.py`, `build_snapshot.py`, `supabase` 패키지
+- `SUPABASE_URL`·`SUPABASE_ANON_KEY`·`SUPABASE_SERVICE_ROLE_KEY` 환경변수
+- Cloudflare Deploy Hook과 `CLOUDFLARE_DEPLOY_HOOK_URL` 시크릿
+- PostgREST 1000행 상한 대응 코드, 뷰포트 차단 로직 (스냅샷 전량이 메모리에 있으므로 불필요)
+
+**지금 필요한 시크릿은 `SAFETYDATA_API_KEY` 하나뿐이다.**
+
+`cloudflare/workers-autoconfig` 브랜치는 **예전 React SPA 버전**(Vite + 카카오맵)이라
+현재 `main`과 무관하다. `gh-pages`·`feat/offline-support` 브랜치도 정리 대상이다.
 
 ---
 
