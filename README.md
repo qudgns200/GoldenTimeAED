@@ -29,6 +29,7 @@
 
 ## 문서
 
+- [`docs/HANDOFF.md`](docs/HANDOFF.md) — **다음에 할 일.** 다른 PC에서 이어받을 때 여기부터
 - [`CLAUDE.md`](CLAUDE.md) — 아키텍처, 환경변수, 로컬 실행, 주의사항
 - [`docs/OFFLINE_DESIGN.md`](docs/OFFLINE_DESIGN.md) — 오프라인 설계. **오프라인 코드를 건드리기 전에 필독**
 - [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md) — 단계별 진행 계획과 완료 기준
