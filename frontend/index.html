@@ -2,35 +2,62 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>GoldenTimeAED — 내 주변 자동심장충격기</title>
+  <meta name="theme-color" content="#d92d20">
+  <meta name="description" content="가까운 자동심장충격기(AED)를 지도와 목록으로 찾습니다. 오프라인에서도 동작합니다.">
   <!-- 인라인 SVG 파비콘 (별도 파일 요청 없이 404를 막는다) -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E">
+  <!-- iOS는 manifest의 아이콘을 쓰지 않으므로 별도로 지정해야 홈 화면 추가 시 제대로 나온다 -->
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="topbar">
     <h1>GoldenTimeAED</h1>
-    <button id="locate-btn" type="button">내 위치</button>
+    <div class="topbar__actions">
+      <button id="toggle-btn" type="button" hidden>목록</button>
+      <button id="locate-btn" type="button">내 위치</button>
+    </div>
   </header>
 
-  <div id="map"></div>
+  <!-- 온라인 전용. 네이버 지도는 타일을 매번 서버에서 받으므로 오프라인에서는 비운다. -->
+  <div id="map" hidden></div>
+
+  <!-- 오프라인 대체 화면. 온라인에서도 '목록' 버튼으로 볼 수 있다. -->
+  <section id="offline" class="offline" hidden>
+    <p id="offline-banner" class="offline-banner"></p>
+
+    <div class="offline-map">
+      <canvas id="offline-canvas"></canvas>
+      <div id="offline-scale" class="scale"></div>
+      <button id="compass-btn" class="compass-btn" type="button">나침반 켜기</button>
+    </div>
+
+    <div id="offline-list" class="offline-list"></div>
+  </section>
 
   <div id="status" class="status" role="status" aria-live="polite"></div>
 
-  <div id="fatal" class="fatal" hidden>
-    <div class="fatal__box">
-      <h2>지도를 불러오지 못했습니다</h2>
-      <p id="fatal-msg"></p>
-    </div>
+  <!-- 설치를 권하는 이유는 편의가 아니라 저장소 보존이다 (app.js maybeShowInstallHint 주석 참고) -->
+  <div id="install-hint" class="install-hint" hidden>
+    <p id="install-text"></p>
+    <button id="install-btn" class="install-hint__cta" type="button" hidden>설치</button>
+    <button id="install-close" class="install-hint__close" type="button" aria-label="닫기">×</button>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
+  <script src="ui-util.js"></script>
+  <script src="geo.js"></script>
+  <script src="data-store.js"></script>
+  <script src="sync-data.js"></script>
+  <script src="map-view.js"></script>
+  <script src="offline-view.js"></script>
   <script src="app.js"></script>
   <script>
-    // 네이버 지도 스크립트는 config.js의 클라이언트 ID가 있어야 URL을 만들 수 있으므로
-    // 정적 <script> 태그 대신 여기서 동적으로 삽입한다.
+    // 네이버 지도 스크립트는 config.js의 클라이언트 ID가 있어야 URL을 만들 수 있고,
+    // 오프라인이면 아예 로드되지 않아야 하므로 app.js가 상황을 보고 동적으로 삽입한다.
     App.bootstrap();
   </script>
 </body>

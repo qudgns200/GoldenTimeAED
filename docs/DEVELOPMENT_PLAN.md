@@ -71,17 +71,22 @@ GoldenTimeAED — AED 위치 지도 웹앱. 단계별(Phase) 진행 순서와 �
 구현 시 확인된 사항:
 
 - **PostgREST는 요청당 1000행 상한**이며 초과분은 경고 없이 잘린다(전국 요청 시 62,000건 중 1,000건만 반환).
-  `app.js`는 `limit`(500) + 정확한 `count`를 함께 요청해 "N개 중 500개만 표시" 배너로 알린다.
+  `app.js`는 `limit`(500) + 정확한 `count`를 함께 요청해 "N개 중 500개만 표시" 배너로 알렸다.
 - 위도 스팬이 0.15도를 넘으면 조회하지 않는다. 서울 도심은 ±0.05도에 AED가 2,545개라 마커 표시가 무의미하다.
 - 네이버 지도 인증 파라미터는 신규 콘솔 키 `ncpKeyId` / 구 콘솔 키 `ncpClientId`로 갈린다.
-  `config.js`에서 전환 가능하며 인증 실패 시 안내 화면이 뜬다.
+  `config.js`에서 전환 가능하며 인증 실패 시 안내가 뜬다.
 - `file://`로 열면 리퍼러 검사에 걸려 지도가 뜨지 않는다. 반드시 HTTP로 서빙할 것.
+
+> **Phase 8에서 대체됨** — 실시간 Supabase 조회를 스냅샷 기반으로 바꾸면서 위 두 항목
+> (1000행 상한 대응, 뷰포트 차단)은 코드에서 제거되었다. 전량이 메모리에 있으므로 더 이상
+> 필요 없다. 프론트엔드의 Supabase 조회와 supabase-js CDN 의존성도 함께 사라졌다.
 
 ## Phase 6 — 배포
 
 - [x] **Cloudflare Pages로 결정.** 설정 파일은 [`frontend/_headers`](../frontend/_headers), 빌드는 [`frontend/build-config.sh`](../frontend/build-config.sh)
-- [ ] Cloudflare 대시보드에서 저장소 연결 + 빌드 설정 (`sh frontend/build-config.sh` / 출력 `frontend`)
-- [ ] 배포 환경에 `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `NAVER_MAP_CLIENT_ID` 주입
+- [ ] Cloudflare 대시보드에서 저장소 연결 + 빌드 설정
+      (빌드 명령은 Phase 8에서 `sh frontend/build-config.sh && python3 backend/scripts/build_snapshot.py`로 변경됨 / 출력 `frontend`)
+- [ ] 배포 환경에 `NAVER_MAP_CLIENT_ID`(config.js용), `SUPABASE_URL`·`SUPABASE_ANON_KEY`(스냅샷 생성용) 주입
 - [ ] 네이버 클라우드 콘솔에 배포 도메인(`*.pages.dev`)을 웹 서비스 URL로 등록
 
 **완료 기준**: 배포된 URL에서 지도와 마커가 정상 표시됨.
@@ -104,6 +109,60 @@ GoldenTimeAED — AED 위치 지도 웹앱. 단계별(Phase) 진행 순서와 �
 
 **완료 기준**: 1주일간 배치 정상 동작 + 주요 시나리오(정상/빈 데이터/API 오류) 수동 테스트 통과.
 
+## Phase 8 — 오프라인 지원
+
+기획 의도에 있던 "오프라인에서도 동작"이 Phase 0~7 어디에도 반영되지 않은 것을 발견해 추가한 단계.
+지하 주차장·엘리베이터처럼 **네트워크가 약한 곳일수록 심정지 대응이 필요**하므로 필수 기능으로 다룬다.
+설계 근거와 데이터 흐름은 [`docs/OFFLINE_DESIGN.md`](OFFLINE_DESIGN.md)에 별도 문서로 정리했다.
+
+**실시간 조회 → 스냅샷 기반 전환**
+
+- [x] `backend/scripts/build_snapshot.py`: Supabase 전량 → `data/aed-snapshot.json` + `aed-meta.json`
+      (Pages 빌드 환경에 의존성을 추가하지 않도록 stdlib만 사용)
+- [x] 프론트엔드에서 Supabase 직접 조회 제거 — supabase-js CDN 및 `SUPABASE_ANON_KEY` 노출 제거
+- [x] `data-store.js`(IndexedDB) + `sync-data.js`(meta 비교 후 조건부 다운로드)
+- [x] `build-config.sh`에서 Supabase 키 제거, `.gitignore`에 `frontend/data/` 추가
+
+**오프라인 화면**
+
+- [x] `geo.js`: 하버사인 거리 / 방위각 / 최근접·뷰포트 필터
+- [x] `offline-view.js`: Canvas 간이 지도(거리 동심원 + 방위 눈금 + 나침반 회전) + 거리순 목록
+- [x] `map-view.js` 분리, `app.js`는 부팅·모드 전환만 담당
+- [x] 모든 실패를 오프라인 뷰로 흡수 — 전체 화면 오버레이(`fatal`) 제거
+
+**PWA**
+
+- [x] `sw.js`(앱 셸 캐시), `manifest.webmanifest`, 아이콘 3종(`icons/make_icons.py`로 재생성 가능)
+- [x] `navigator.storage.persist()` 요청 + 설치 안내 1회 노출
+
+**배포 연동**
+
+- [x] `sync-aed.yml`에 Cloudflare Pages Deploy Hook 호출 단계 추가
+- [ ] 저장소 시크릿 `CLOUDFLARE_DEPLOY_HOOK_URL` 등록
+- [ ] Pages 빌드 명령을 `sh frontend/build-config.sh && python3 backend/scripts/build_snapshot.py`로 변경
+- [ ] 실기기 검증: 나침반(iOS 권한 버튼), 홈 화면 설치 후 비행기 모드 실행
+
+**완료 기준**: 온라인 1회 방문 후 비행기 모드에서 앱이 뜨고, 저장된 데이터로 주변 AED가 거리순으로 표시됨.
+
+구현 시 확인된 사항:
+
+- **오프라인 지도 타일은 불가능하다.** 네이버·구글·카카오 모두 웹 API는 온라인 전용이고
+  약관상 타일 저장도 제한된다. 구글 지도 *앱*의 오프라인 기능은 그 앱 안에만 존재해
+  웹페이지가 꺼내 쓸 수 없다. 지도 회사를 바꿔서 해결되는 문제가 아니라,
+  타일을 직접 호스팅(MapLibre + PMTiles)해야만 가능하다 → 범위 밖으로 두었다.
+- **다운로드는 두 번 일어난다.** 서버 쪽(매일 자정 스냅샷 생성)과 사용자 기기 쪽(온라인 방문 시
+  IndexedDB 저장)은 별개다. 오프라인일 때는 다운로드가 불가능하므로 **미리 받아두는 것**이 핵심이고,
+  버튼에 의존하면 안 누른 사용자는 응급 시 빈 화면을 본다 → 첫 방문 시 자동 다운로드.
+- **설치는 오프라인의 필수 조건이 아니다.** 서비스워커는 일반 탭에서도 동작한다. 그럼에도 설치를
+  권하는 이유는 iOS Safari가 **7일 미방문 시 서비스워커/IndexedDB를 삭제**하기 때문이다
+  (홈 화면 설치 시 예외). AED 앱은 "오래 안 씀"이 기본 상태라 이 차이가 크다.
+- **오프라인 뷰는 온라인에서도 토글로 노출한다.** 평소에 실행되지 않는 코드는 검증되지 않은 채
+  남아 정작 필요할 때 깨진다.
+- 캔버스에서 가까운 3개는 **이름 대신 숫자(1·2·3)** 로 표시한다. 도심은 AED가 한곳에 몰려 있어
+  이름표를 붙이면 서로 겹쳐 읽을 수 없다. 이름은 같은 순서의 아래 목록에서 확인한다.
+- 네이버 SDK는 **키가 무효여도 스크립트 로드는 "성공"한 뒤 내부에서 터진다.** `script.onload`만
+  믿으면 안 되므로 `naver.maps.Map` 존재를 확인하고 `MapView.init`을 try/catch로 감싼다.
+
 ---
 
 ## 진행 순서 요약
@@ -111,7 +170,10 @@ GoldenTimeAED — AED 위치 지도 웹앱. 단계별(Phase) 진행 순서와 �
 ```
 Phase 0 (초기화) → Phase 1 (API 검증) → Phase 2 (DB 스키마)
    → Phase 3 (ETL) → Phase 4 (스케줄러) → Phase 5 (프론트엔드)
-   → Phase 6 (배포) → Phase 7 (QA)
+   → Phase 6 (배포) → Phase 7 (QA) → Phase 8 (오프라인 지원)
 ```
 
 Phase 1은 다른 모든 단계(스키마, ETL, 문서)의 전제 조건이므로 가장 먼저 실제 키로 검증할 것을 권장한다.
+
+Phase 8은 Phase 5의 데이터 조회 방식을 대체하므로, Phase 5·6의 일부 항목(1000행 상한 대응,
+뷰포트 차단, 빌드 명령, 주입 환경변수)은 Phase 8 기준으로 읽어야 한다.

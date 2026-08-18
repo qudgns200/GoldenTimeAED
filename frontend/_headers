@@ -10,4 +10,11 @@
   Referrer-Policy: strict-origin-when-cross-origin
   # 파일명에 해시가 없어 캐시가 남으면 배포해도 구버전이 보이고,
   # config.js는 키를 교체해도 반영되지 않는다. 항상 재검증시킨다.
+  # 서비스워커(sw.js)도 이 규칙 덕에 항상 재검증되어 배포가 즉시 반영된다.
+  Cache-Control: public, max-age=0, must-revalidate
+
+# AED 스냅샷. 매일 갱신되므로 역시 항상 재검증시킨다.
+# 내용이 그대로면 ETag로 304가 떨어져 2~3MB를 다시 받지 않는다.
+# (앱은 이 앞에 수백 바이트짜리 aed-meta.json을 먼저 확인하므로 대개 여기까지 오지도 않는다.)
+/data/*
   Cache-Control: public, max-age=0, must-revalidate

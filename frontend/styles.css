@@ -33,7 +33,12 @@ html, body {
   letter-spacing: -0.2px;
 }
 
-#locate-btn {
+.topbar__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.topbar__actions button {
   border: 1px solid var(--border);
   background: #fff;
   color: var(--text);
@@ -44,8 +49,8 @@ html, body {
   cursor: pointer;
 }
 
-#locate-btn:hover { background: #f9fafb; }
-#locate-btn:active { transform: translateY(1px); }
+.topbar__actions button:hover { background: #f9fafb; }
+.topbar__actions button:active { transform: translateY(1px); }
 
 #map {
   width: 100%;
@@ -60,7 +65,9 @@ html, body {
   transform: translateX(-50%) translateY(8px);
   max-width: min(92vw, 520px);
   padding: 10px 16px;
-  border-radius: 999px;
+  /* 알약 모양(999px)으로 두면 지도 인증 실패 같은 긴 안내문이 거대한 원이 된다.
+     여러 줄에서도 형태가 유지되도록 고정 반경을 쓴다. */
+  border-radius: 12px;
   background: rgba(16, 24, 40, 0.88);
   color: #fff;
   font-size: 13px;
@@ -121,44 +128,280 @@ html, body {
   box-shadow: 0 0 0 2px rgba(21, 112, 239, 0.35);
 }
 
-/* 치명적 오류(설정 누락, 지도 인증 실패 등) */
-.fatal {
-  position: fixed;
-  inset: 0;
-  background: rgba(255, 255, 255, 0.96);
+/* ------------------------------------------------------------------ 오프라인 뷰
+   지도 타일 없이 동작하는 대체 화면. 상단은 Canvas 간이 지도, 하단은 거리순 목록.
+   왜 지도가 아닌지는 docs/OFFLINE_DESIGN.md 참고. */
+
+.offline {
+  height: calc(100% - var(--topbar-h));
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  z-index: 200;
+  flex-direction: column;
+  background: #fff;
 }
 
-/* 위 .fatal의 display:flex가 브라우저 기본 [hidden] { display:none }보다
-   우선순위가 높아 hidden 속성을 무력화한다. 명시적으로 되돌린다. */
-.fatal[hidden] {
-  display: none;
-}
+/* display:flex가 브라우저 기본 [hidden] { display:none }보다 우선순위가 높아
+   hidden 속성을 무력화한다. 명시적으로 되돌린다 (.install-hint도 같은 이유). */
+.offline[hidden] { display: none; }
 
-.fatal__box {
-  max-width: 480px;
+.offline-banner {
+  margin: 0;
+  padding: 9px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  background: #f9fafb;
+  border-bottom: 1px solid var(--border);
   text-align: center;
 }
 
-.fatal__box h2 {
-  margin: 0 0 10px;
-  font-size: 17px;
-  color: var(--accent);
+.offline-banner--warn {
+  color: #93370d;
+  background: #fffaeb;
+  border-bottom-color: #fedf89;
 }
 
-.fatal__box p {
+.offline-map {
+  position: relative;
+  flex: 0 0 auto;
+  /* 세로가 짧은 화면에서 목록이 사라지지 않도록 뷰포트 비율로 제한한다. */
+  height: min(46vh, 340px);
+  border-bottom: 1px solid var(--border);
+}
+
+#offline-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.scale {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  display: flex;
+  gap: 4px;
+}
+
+.scale-btn {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.scale-btn--on {
+  color: #fff;
+  background: var(--text);
+  border-color: var(--text);
+}
+
+.compass-btn {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.offline-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.offline-empty {
   margin: 0;
-  font-size: 14px;
-  line-height: 1.6;
+  padding: 32px 24px;
+  text-align: center;
+  font-size: 13.5px;
+  line-height: 1.7;
   color: var(--muted);
   word-break: keep-all;
 }
 
+.aed-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.aed-item {
+  border-bottom: 1px solid var(--border);
+}
+
+.aed-item__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.aed-item__head:active { background: #f9fafb; }
+.aed-item--open .aed-item__head { background: #f9fafb; }
+
+.aed-item__dir {
+  flex: 0 0 34px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.aed-item__arrow {
+  display: block;
+  font-size: 17px;
+  line-height: 1.1;
+  color: var(--text);
+}
+
+.aed-item__bearing {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+/* 간이 지도의 1·2·3 숫자 점과 목록을 잇는 배지 */
+.aed-item__rank {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: -4px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.aed-item__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.aed-item__name {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  /* 긴 기관명이 줄바꿈되어 목록이 들쭉날쭉해지는 것을 막는다. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aed-item__place {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aed-item__dist {
+  flex: 0 0 auto;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.aed-item__detail {
+  padding: 0 14px 14px 60px;
+}
+
+/* 목록 상세는 지도 정보창과 같은 마크업을 쓰지만 이미 카드 안이라 그림자를 뺀다. */
+.aed-item__detail .iw {
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  box-shadow: none;
+}
+
+.aed-item__external {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+}
+
+/* --------------------------------------------------------------- 설치 안내 */
+
+.install-hint {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(92vw, 460px);
+  padding: 12px 12px 12px 16px;
+  border-radius: 12px;
+  background: #101828;
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.24);
+  z-index: 150;
+}
+
+.install-hint[hidden] { display: none; }
+
+.install-hint p {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  word-break: keep-all;
+}
+
+.install-hint__cta {
+  flex: 0 0 auto;
+  border: 0;
+  background: #fff;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 7px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.install-hint__close {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 20px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+}
+
 @media (max-width: 480px) {
   .topbar h1 { font-size: 15px; }
+  .topbar__actions button { padding: 8px 11px; font-size: 13px; }
   .status { bottom: 14px; font-size: 12.5px; }
+  .offline-map { height: min(42vh, 300px); }
 }

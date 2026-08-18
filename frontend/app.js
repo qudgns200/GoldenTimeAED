@@ -1,33 +1,29 @@
 /**
- * GoldenTimeAED 프론트엔드
+ * GoldenTimeAED — 부팅과 모드 전환.
  *
- * 지도 뷰포트가 바뀔 때마다 Supabase에서 해당 범위의 AED만 조회해 마커로 표시한다.
- * 백엔드 API를 거치지 않고 anon 키로 직접 조회한다 (docs/API_SPEC.md 3절).
+ * 데이터 흐름 (docs/OFFLINE_DESIGN.md):
+ *   1) IndexedDB의 저장본을 즉시 읽어 화면을 띄운다 (네트워크를 기다리지 않는다).
+ *   2) 네이버 지도 스크립트를 시도한다. 성공하면 지도 뷰, 실패하면 오프라인 뷰.
+ *   3) 백그라운드로 스냅샷 갱신을 확인하고, 새 데이터가 오면 뷰에 반영한다.
+ *
+ * 설계 원칙 — 어떤 실패도 앱을 잠그지 않는다.
+ * 예전에는 지도 스크립트가 실패하면 전체 화면 오버레이로 앱을 막았고, 그 전에
+ * supabase-js CDN이 실패하면 TypeError로 백지 화면이 됐다. 둘 다 오프라인에서
+ * 반드시 일어나는 일이었다. 이제 모든 실패는 오프라인 뷰로 흡수된다.
  */
 const App = (() => {
   "use strict";
 
-  // PostgREST는 요청당 기본 1000행까지만 반환한다. 실측으로 확인된 값이며,
-  // 넘어가면 경고 없이 잘리므로 항상 명시적 limit + 정확한 count를 함께 요청한다.
-  const MARKER_LIMIT = 500;
+  const LAST_POSITION_KEY = "goldentime.lastPosition";
+  const INSTALL_HINT_KEY = "goldentime.installHintSeen";
 
-  // 뷰포트가 이보다 넓으면(위도 기준) 조회 자체를 하지 않는다.
-  // 서울 도심은 ±0.05도(약 11km) 범위에 AED가 2,500개가 넘어 표시 의미가 없다.
-  const MAX_QUERY_SPAN_DEG = 0.15;
-
-  // 지도 이동이 멈춘 뒤 이 시간만큼 기다렸다가 조회한다 (드래그 중 연속 호출 방지).
-  const DEBOUNCE_MS = 300;
-
-  const SEOUL_CITY_HALL = { lat: 37.5665, lng: 126.978 };
-  const DEFAULT_ZOOM = 15;
-
-  let map = null;
-  let supabase = null;
-  let markers = [];
-  let infoWindow = null;
-  let debounceTimer = null;
-  let myLocationMarker = null;
-  let requestSeq = 0;
+  let rows = [];
+  let mode = "offline"; // "map" | "offline"
+  let mapAvailable = false;
+  let mapScriptTried = false;
+  let deferredInstallPrompt = null;
+  let currentPos = null;
+  let syncing = false;
 
   const el = (id) => document.getElementById(id);
 
@@ -37,195 +33,115 @@ const App = (() => {
     node.className = message ? `status status--${kind} status--visible` : "status";
   }
 
-  function fatal(message) {
-    el("fatal-msg").textContent = message;
-    el("fatal").hidden = false;
-  }
+  /* ------------------------------------------------------------- 모드 전환 */
 
-  function escapeHtml(value) {
-    if (value === null || value === undefined || value === "") return "";
-    return String(value).replace(/[&<>"']/g, (ch) => ({
-      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-    }[ch]));
-  }
+  function applyMode(next) {
+    mode = next;
+    const showMap = next === "map";
 
-  /** 마커 클릭 시 띄울 상세 정보 HTML */
-  function infoWindowContent(aed) {
-    const name = escapeHtml(aed.org_name) || "이름 미상";
-    const place = escapeHtml(aed.install_place);
-    const address = escapeHtml(aed.address_road);
-    const phone = escapeHtml(aed.phone);
+    el("map").hidden = !showMap;
+    el("offline").hidden = showMap;
+    el("toggle-btn").textContent = showMap ? "목록" : "지도";
+    // 지도를 쓸 수 없으면 토글할 곳이 없으므로 버튼을 숨긴다.
+    el("toggle-btn").hidden = !mapAvailable;
 
-    // 전화번호는 원본에서 일부 마스킹되어 온다(예: 02-******). 걸 수 없으므로 링크로 만들지 않는다.
-    return `
-      <div class="iw">
-        <h3 class="iw__title">${name}</h3>
-        ${place ? `<p class="iw__row"><span>설치위치</span>${place}</p>` : ""}
-        ${address ? `<p class="iw__row"><span>주소</span>${address}</p>` : ""}
-        ${phone ? `<p class="iw__row"><span>관리자</span>${phone}</p>` : ""}
-      </div>`;
-  }
-
-  function clearMarkers() {
-    markers.forEach((m) => m.setMap(null));
-    markers = [];
-  }
-
-  function renderMarkers(rows) {
-    clearMarkers();
-    rows.forEach((aed) => {
-      if (aed.latitude === null || aed.longitude === null) return;
-      const marker = new naver.maps.Marker({
-        position: new naver.maps.LatLng(aed.latitude, aed.longitude),
-        map,
-        title: aed.org_name || "AED",
-      });
-      naver.maps.Event.addListener(marker, "click", () => {
-        infoWindow.setContent(infoWindowContent(aed));
-        infoWindow.open(map, marker);
-      });
-      markers.push(marker);
-    });
-  }
-
-  /** 현재 뷰포트 범위의 AED를 조회해 그린다. */
-  async function loadInViewport() {
-    const bounds = map.getBounds();
-    const sw = bounds.getSW();
-    const ne = bounds.getNE();
-    const latSpan = ne.lat() - sw.lat();
-
-    if (latSpan > MAX_QUERY_SPAN_DEG) {
-      clearMarkers();
-      infoWindow.close();
-      setStatus("지도를 확대하면 주변 AED가 표시됩니다.", "hint");
-      return;
-    }
-
-    // 조회가 늦게 도착해 최신 결과를 덮어쓰는 것을 막는다.
-    const seq = ++requestSeq;
-    setStatus("불러오는 중…", "info");
-
-    const { data, error, count } = await supabase
-      .from("aed_locations")
-      .select("id, org_name, install_place, address_road, latitude, longitude, phone", {
-        count: "exact",
-      })
-      .gte("latitude", sw.lat())
-      .lte("latitude", ne.lat())
-      .gte("longitude", sw.lng())
-      .lte("longitude", ne.lng())
-      .limit(MARKER_LIMIT);
-
-    if (seq !== requestSeq) return; // 더 최근 요청이 진행 중
-
-    if (error) {
-      console.error(error);
-      setStatus(`조회 실패: ${error.message}`, "error");
-      return;
-    }
-
-    renderMarkers(data);
-
-    if (count > data.length) {
-      setStatus(
-        `이 영역에 ${count.toLocaleString()}개 중 ${data.length}개만 표시했습니다. 확대하면 모두 볼 수 있습니다.`,
-        "warn"
-      );
-    } else if (data.length === 0) {
-      setStatus("이 영역에는 등록된 AED가 없습니다.", "hint");
+    if (showMap) {
+      OfflineView.hide();
+      MapView.refresh();
     } else {
-      setStatus(`${data.length.toLocaleString()}개 표시 중`, "info");
+      OfflineView.setOffline(!mapAvailable || !navigator.onLine);
+      OfflineView.show();
+      setStatus("");
     }
   }
 
-  function scheduleLoad() {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(loadInViewport, DEBOUNCE_MS);
+  function toggleMode() {
+    applyMode(mode === "map" ? "offline" : "map");
   }
 
-  function moveToMyLocation() {
+  /* ------------------------------------------------------------------ 위치 */
+
+  function rememberPosition(lat, lng) {
+    try {
+      localStorage.setItem(LAST_POSITION_KEY, JSON.stringify({ lat, lng }));
+    } catch {
+      // 사생활 보호 모드 등에서 실패할 수 있다. 위치 기억은 부가 기능이라 무시한다.
+    }
+  }
+
+  function lastKnownPosition() {
+    try {
+      const raw = localStorage.getItem(LAST_POSITION_KEY);
+      if (!raw) return null;
+      const value = JSON.parse(raw);
+      return typeof value.lat === "number" && typeof value.lng === "number" ? value : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function applyPosition(lat, lng, { center }) {
+    currentPos = { lat, lng };
+    rememberPosition(lat, lng);
+    OfflineView.setMyLocation(lat, lng);
+    if (mapAvailable) MapView.setMyLocation(lat, lng, { center });
+  }
+
+  function requestLocation({ center }) {
     if (!navigator.geolocation) {
       setStatus("이 브라우저는 위치 기능을 지원하지 않습니다.", "error");
       return;
     }
-    setStatus("현재 위치를 확인하는 중…", "info");
+    if (center) setStatus("현재 위치를 확인하는 중…", "info");
+
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const here = new naver.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
-        if (myLocationMarker) myLocationMarker.setMap(null);
-        myLocationMarker = new naver.maps.Marker({
-          position: here,
-          map,
-          title: "내 위치",
-          icon: {
-            content: '<div class="me-dot" aria-label="내 위치"></div>',
-            anchor: new naver.maps.Point(9, 9),
-          },
-          zIndex: 1000,
-        });
-        map.setCenter(here);
-        map.setZoom(Math.max(map.getZoom(), DEFAULT_ZOOM));
-        // setCenter/setZoom이 idle을 발생시켜 조회가 이어진다.
+      (position) => {
+        applyPosition(position.coords.latitude, position.coords.longitude, { center });
+        // 지도 모드라면 곧 render()가 건수를 다시 써준다. 목록 모드에서는
+        // 여기서 지우지 않으면 "확인하는 중…"이 화면에 계속 남는다.
+        if (center) setStatus("");
       },
-      (err) => {
+      (error) => {
         const reason =
-          err.code === err.PERMISSION_DENIED
+          error.code === error.PERMISSION_DENIED
             ? "위치 권한이 거부되었습니다."
             : "현재 위치를 가져오지 못했습니다.";
-        setStatus(reason, "error");
+        // 권한을 못 받아도 마지막 위치가 있으면 목록은 여전히 쓸모가 있다.
+        if (center) setStatus(reason, "error");
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      // GPS는 네트워크 없이도 동작하지만 첫 측위는 오래 걸릴 수 있다.
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
     );
   }
 
-  /** 네이버 지도 스크립트가 로드된 뒤 실행된다. */
-  function initMap() {
-    map = new naver.maps.Map("map", {
-      center: new naver.maps.LatLng(SEOUL_CITY_HALL.lat, SEOUL_CITY_HALL.lng),
-      zoom: DEFAULT_ZOOM,
-      zoomControl: true,
-      zoomControlOptions: { position: naver.maps.Position.RIGHT_CENTER },
-    });
+  /* ------------------------------------------------------------ 지도 스크립트 */
 
-    infoWindow = new naver.maps.InfoWindow({
-      content: "",
-      borderWidth: 0,
-      backgroundColor: "transparent",
-      disableAnchor: true,
-      pixelOffset: new naver.maps.Point(0, -8),
-    });
-
-    naver.maps.Event.addListener(map, "idle", scheduleLoad);
-    naver.maps.Event.addListener(map, "click", () => infoWindow.close());
-    el("locate-btn").addEventListener("click", moveToMyLocation);
-
-    loadInViewport();
+  /** 지도를 포기하고 목록으로 내려앉는다. 어떤 이유든 앱이 멈추지는 않게 한다. */
+  function fallbackToOffline(message) {
+    mapAvailable = false;
+    applyMode("offline");
+    if (message) setStatus(message, "warn");
   }
 
-  function bootstrap() {
+  function loadMapScript() {
+    if (mapScriptTried) return;
     const cfg = window.APP_CONFIG;
-    if (!cfg) {
-      fatal("config.js가 없습니다. frontend/config.example.js를 config.js로 복사한 뒤 값을 채워주세요.");
+    if (!cfg || !cfg.NAVER_MAP_CLIENT_ID || String(cfg.NAVER_MAP_CLIENT_ID).startsWith("YOUR")) {
+      setStatus(
+        "config.js에 NAVER_MAP_CLIENT_ID가 없어 지도를 표시할 수 없습니다. 목록으로 표시합니다.",
+        "error"
+      );
       return;
     }
+    mapScriptTried = true;
 
-    const missing = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "NAVER_MAP_CLIENT_ID"].filter(
-      (k) => !cfg[k] || String(cfg[k]).startsWith("YOUR")
-    );
-    if (missing.length) {
-      fatal(`config.js에 다음 값이 비어 있습니다: ${missing.join(", ")}`);
-      return;
-    }
-
-    supabase = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
-
-    // 네이버 지도 인증 실패 시 호출되는 전역 콜백
     window.navermap_authFailure = () => {
-      fatal(
-        "네이버 지도 인증에 실패했습니다. 콘솔의 리퍼러 화이트리스트에 현재 도메인이 등록되어 있는지, " +
-          `그리고 config.js의 NAVER_MAP_AUTH_PARAM("${cfg.NAVER_MAP_AUTH_PARAM}")이 키 종류와 맞는지 확인해주세요. ` +
-          "신규 콘솔 키는 ncpKeyId, 구 콘솔 키는 ncpClientId를 사용합니다."
+      fallbackToOffline();
+      setStatus(
+        "네이버 지도 인증에 실패했습니다. 콘솔의 웹 서비스 URL에 현재 도메인이 등록되어 있는지, " +
+          `config.js의 NAVER_MAP_AUTH_PARAM("${cfg.NAVER_MAP_AUTH_PARAM}")이 키 종류와 맞는지 확인해주세요. ` +
+          "신규 콘솔 키는 ncpKeyId, 구 콘솔 키는 ncpClientId를 사용합니다.",
+        "error"
       );
     };
 
@@ -234,9 +150,177 @@ const App = (() => {
     script.src =
       `https://oapi.map.naver.com/openapi/v3/maps.js?${authParam}=` +
       encodeURIComponent(cfg.NAVER_MAP_CLIENT_ID);
-    script.onload = initMap;
-    script.onerror = () => fatal("네이버 지도 스크립트를 불러오지 못했습니다. 네트워크 상태를 확인해주세요.");
+
+    script.onload = () => {
+      // 스크립트 파일 자체는 받아졌어도 SDK를 쓸 수 있다는 보장이 없다.
+      // 키가 유효하지 않으면 네이버 SDK는 내부 모듈 로드에 실패한 채 로드가 "성공"하고,
+      // 이후 생성자 호출에서 터진다. mapAvailable을 미리 켜두면 목록/지도 토글이
+      // 깨진 지도로 넘어가므로, 실제로 초기화에 성공한 뒤에만 켠다.
+      if (!window.naver || !naver.maps || !naver.maps.Map) {
+        fallbackToOffline("지도를 불러오지 못했습니다. 목록으로 표시합니다.");
+        return;
+      }
+      try {
+        MapView.init({ containerId: "map", rows, onStatus: setStatus });
+      } catch (error) {
+        console.warn("지도 초기화 실패 — 목록으로 표시합니다.", error);
+        fallbackToOffline("지도를 초기화하지 못했습니다. 목록으로 표시합니다.");
+        return;
+      }
+      mapAvailable = true;
+      applyMode("map");
+      // 이미 측위가 끝났다면 다시 요청하지 않고 그 값을 지도에 얹는다.
+      if (currentPos) MapView.setMyLocation(currentPos.lat, currentPos.lng, { center: false });
+      else requestLocation({ center: false });
+    };
+
+    // 오프라인이면 여기로 온다. 예전에는 전체 화면 오버레이로 앱을 막던 지점이다.
+    script.onerror = () => {
+      // 실패한 태그를 남겨두면 온라인 복귀 때마다 죽은 <script>가 쌓인다.
+      script.remove();
+      mapScriptTried = false; // 온라인으로 돌아오면 다시 시도할 수 있게 둔다
+      mapAvailable = false;
+      applyMode("offline");
+    };
+
     document.head.appendChild(script);
+  }
+
+  /* ------------------------------------------------------------ 데이터 갱신 */
+
+  async function syncInBackground() {
+    // online 이벤트는 연달아 여러 번 올 수 있다. 2~3MB를 중복으로 받지 않게 막는다.
+    if (syncing) return;
+    syncing = true;
+
+    const firstRun = rows.length === 0;
+    try {
+      const result = await SyncData.ensureFresh((phase) => {
+        if (!firstRun) return; // 이미 데이터가 있으면 조용히 갱신한다
+        if (phase === "downloading") setStatus("AED 데이터를 내려받는 중…", "info");
+        if (phase === "saving") setStatus("저장하는 중…", "info");
+      });
+
+      if (result.status === "updated") {
+        rows = result.rows;
+        MapView.setRows(rows);
+        OfflineView.setRows(rows);
+        OfflineView.setMeta(result.meta);
+        setStatus(
+          `AED ${result.meta.count.toLocaleString()}개를 오프라인용으로 저장했습니다.`,
+          "info"
+        );
+        maybeShowInstallHint();
+      } else if (result.status === "fresh") {
+        OfflineView.setMeta(result.meta);
+        if (firstRun) setStatus("");
+      } else if (firstRun && !rows.length) {
+        setStatus("AED 데이터를 받지 못했습니다. 인터넷 연결을 확인해주세요.", "error");
+      }
+    } finally {
+      // 여기서 풀지 않으면 예외 한 번에 이후 갱신이 영영 막힌다.
+      syncing = false;
+    }
+  }
+
+  /* -------------------------------------------------------------- PWA 설치 */
+
+  function isInstalled() {
+    return (
+      window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true
+    );
+  }
+
+  /**
+   * 설치를 권하는 이유는 편의가 아니라 저장소 보존이다.
+   * iOS Safari는 7일간 미방문 시 서비스워커/IndexedDB를 지우는데, 홈 화면에 설치된
+   * 웹앱은 예외다. AED 앱은 "오래 안 씀"이 기본 상태라 이 차이가 크다.
+   */
+  function maybeShowInstallHint() {
+    if (isInstalled()) return;
+    try {
+      if (localStorage.getItem(INSTALL_HINT_KEY)) return;
+    } catch {
+      return;
+    }
+
+    const hint = el("install-hint");
+    const button = el("install-btn");
+    el("install-text").textContent = deferredInstallPrompt
+      ? "홈 화면에 추가하면 오프라인에서도 확실히 동작합니다."
+      : "공유 → '홈 화면에 추가'를 누르면 오프라인에서도 확실히 동작합니다.";
+    button.hidden = !deferredInstallPrompt;
+    hint.hidden = false;
+  }
+
+  function dismissInstallHint() {
+    el("install-hint").hidden = true;
+    try {
+      localStorage.setItem(INSTALL_HINT_KEY, "1");
+    } catch {
+      // 저장 못 해도 이번 세션에서는 닫힌다.
+    }
+  }
+
+  function registerServiceWorker() {
+    if (!("serviceWorker" in navigator)) return;
+    // file://에서는 등록할 수 없다. 로컬 테스트는 HTTP로 서빙할 것.
+    navigator.serviceWorker.register("sw.js").catch((error) => {
+      console.warn("서비스워커 등록 실패 — 오프라인 지원이 제한됩니다.", error);
+    });
+  }
+
+  /* ------------------------------------------------------------------ 부팅 */
+
+  async function bootstrap() {
+    OfflineView.init({
+      canvasId: "offline-canvas",
+      listId: "offline-list",
+      bannerId: "offline-banner",
+      scaleId: "offline-scale",
+      compassBtnId: "compass-btn",
+    });
+
+    el("locate-btn").addEventListener("click", () => requestLocation({ center: true }));
+    el("toggle-btn").addEventListener("click", toggleMode);
+    el("install-close").addEventListener("click", dismissInstallHint);
+    el("install-btn").addEventListener("click", async () => {
+      if (!deferredInstallPrompt) return;
+      deferredInstallPrompt.prompt();
+      deferredInstallPrompt = null;
+      dismissInstallHint();
+    });
+
+    window.addEventListener("beforeinstallprompt", (event) => {
+      event.preventDefault();
+      deferredInstallPrompt = event;
+    });
+
+    // 저장본을 먼저 띄운다. 네트워크를 기다리지 않으므로 오프라인에서도 즉시 화면이 나온다.
+    const [storedRows, meta] = await Promise.all([DataStore.loadRows(), DataStore.getMeta()]);
+    rows = storedRows;
+    OfflineView.setRows(rows);
+    OfflineView.setMeta(meta);
+
+    // 위치 권한을 아직 못 받았어도 마지막 위치가 있으면 목록을 정렬해 보여줄 수 있다.
+    const last = lastKnownPosition();
+    if (last) OfflineView.setMyLocation(last.lat, last.lng);
+
+    applyMode("offline");
+    loadMapScript();
+    requestLocation({ center: false });
+
+    registerServiceWorker();
+    syncInBackground();
+
+    window.addEventListener("online", () => {
+      if (!mapAvailable) loadMapScript();
+      syncInBackground();
+    });
+    window.addEventListener("offline", () => {
+      OfflineView.setOffline(true);
+      if (mode === "map") applyMode("offline");
+    });
   }
 
   return { bootstrap };
