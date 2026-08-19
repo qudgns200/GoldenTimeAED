@@ -35,11 +35,19 @@ const OfflineView = (() => {
     ring: "#d8dde5",
     ringText: "#8a94a6",
     axis: "#eceff4",
-    dot: "#0b7285",
-    dotNear: "#d92d20",
+    // AED는 빨간 하트. 가까운 3개도 같은 색이고 크기와 배지로만 구분한다.
+    dot: "#d92d20",
+    // 순위 배지 — 빨강이 "AED"만을 뜻하도록 역할을 분리한다.
+    badge: "#101828",
     me: "#1971c2",
     label: "#212529",
   };
+
+  // 하트 크기(대략 가로 반지름). 가까운 3개는 크게 그려 눈에 먼저 들어오게 한다.
+  const DOT_SIZE = 5;
+  const DOT_SIZE_NEAR = 8;
+  // 순위 배지 반지름. 겹침 판정과 그리기가 같은 값을 써야 한다.
+  const BADGE_R = 7;
 
   let canvas = null;
   let ctx = null;
@@ -109,9 +117,14 @@ const OfflineView = (() => {
       return;
     }
 
-    drawDots(cx, cy, scale, pxPerMeter, rotation);
+    const badges = drawDots(cx, cy, scale, pxPerMeter, rotation);
     drawRingLabels(cx, cy, scale, pxPerMeter);
     drawMe(cx, cy);
+
+    // 순위 배지는 내 위치보다도 나중에 그린다. 도심에서는 가까운 3개가 20m 안쪽에
+    // 몰려 중앙의 내 위치 표시에 깔리는데, 그러면 목록과 이어주는 번호가
+    // 정작 필요한 상황에서 안 보인다.
+    badges.forEach(({ x, y, rank }) => drawRankBadge(x, y, rank));
   }
 
   function drawRings(cx, cy, scale, pxPerMeter) {
@@ -197,29 +210,77 @@ const OfflineView = (() => {
     // AED가 밀집한 도심에서 정작 필요한 순간에 안 보인다.
     ctx.fillStyle = COLORS.dot;
     for (let i = placed.length - 1; i >= LABELED; i--) {
-      ctx.beginPath();
-      ctx.arc(placed[i].x, placed[i].y, 4, 0, Math.PI * 2);
+      UiUtil.heartPath(ctx, placed[i].x, placed[i].y, DOT_SIZE);
       ctx.fill();
     }
 
-    // 가까운 3개는 맨 위에. 이름 대신 순위 숫자를 점 안에 넣는다 — 도심에서는
-    // 가까운 AED들이 한곳에 몰려 있어 이름표를 붙이면 서로 겹쳐 읽을 수 없다.
-    // 이름은 같은 순서로 정렬된 아래 목록에서 확인한다.
-    ctx.font = "700 11px system-ui, -apple-system, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
+    // 가까운 3개는 맨 위에. 큰 하트 + 흰 테두리로 먼저 눈에 들어오게 한다.
+    const badges = [];
+    // 배지가 피해야 할 것들. 화면 중앙의 내 위치 표시를 먼저 넣어둔다 —
+    // 가장 가까운 AED는 중앙 바로 옆이라 그냥 두면 배지가 내 위치를 덮어버린다.
+    const obstacles = [{ x: cx, y: cy }];
     placed.slice(0, LABELED).forEach((point, index) => {
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, 9, 0, Math.PI * 2);
-      ctx.fillStyle = COLORS.dotNear;
+      UiUtil.heartPath(ctx, point.x, point.y, DOT_SIZE_NEAR);
+      ctx.fillStyle = COLORS.dot;
       ctx.fill();
       ctx.strokeStyle = "#fff";
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      ctx.fillStyle = "#fff";
-      ctx.fillText(String(index + 1), point.x, point.y + 0.5);
+      const badge = placeBadge(point, obstacles, index + 1);
+      obstacles.push(badge);
+      badges.push(badge);
     });
+
+    return badges;
+  }
+
+  /**
+   * 배지를 하트 주변의 빈 자리에 놓는다.
+   *
+   * 도심에서는 가까운 3개가 같은 건물 안이라 좌표가 거의 같다(예: 셋 다 "남서 20m").
+   * 고정 위치에 붙이면 세 배지가 완전히 포개져 하나만 보인다.
+   * 그래서 하트를 중심으로 반지름을 넓혀가며 빈 자리를 찾는다 — 좁은 후보만 두면
+   * 세 번째 배지가 갈 곳이 없어 첫 배지 위에 얹히게 된다(실제로 그렇게 깨졌다).
+   */
+  function placeBadge(point, obstacles, rank) {
+    const step = BADGE_R * 2 + 2; // 배지끼리 닿지 않는 최소 간격
+    const base = DOT_SIZE_NEAR * 0.9;
+
+    // 오른쪽 위를 우선하도록 각도를 -45도에서 시작해 한 바퀴 돈다.
+    for (let ring = 0; ring < 4; ring++) {
+      const radius = base + ring * step;
+      for (let i = 0; i < 8; i++) {
+        const angle = (-45 + i * 45) * (Math.PI / 180);
+        const x = point.x + Math.cos(angle) * radius;
+        const y = point.y + Math.sin(angle) * radius;
+        const clash = obstacles.some((o) => Math.hypot(o.x - x, o.y - y) < step);
+        if (!clash) return { x, y, rank };
+      }
+    }
+    // 반지름 4단계까지 막히는 일은 배지가 3개뿐이라 일어나지 않는다.
+    return { x: point.x + base, y: point.y - base, rank };
+  }
+
+  /**
+   * 순위 배지. 하트 안이 아니라 오른쪽 위에 붙인다 — 이 크기의 하트 안에 숫자를 넣으면
+   * 곡선에 묻혀 읽히지 않는다. 목록의 .aed-item__rank와 같은 색이어야
+   * "캔버스의 ②"와 "목록의 ②"가 같은 것으로 이어진다.
+   */
+  function drawRankBadge(x, y, rank) {
+    ctx.beginPath();
+    ctx.arc(x, y, BADGE_R, 0, Math.PI * 2);
+    ctx.fillStyle = COLORS.badge;
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "700 10px system-ui, -apple-system, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(rank), x, y + 0.5);
   }
 
   /** 나침반이 켜져 있으면 진행 방향을 나타내는 삼각형, 아니면 방향 없는 원. */

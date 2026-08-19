@@ -15,7 +15,6 @@ const App = (() => {
   "use strict";
 
   const LAST_POSITION_KEY = "goldentime.lastPosition";
-  const INSTALL_HINT_KEY = "goldentime.installHintSeen";
 
   let rows = [];
   let mode = "offline"; // "map" | "offline"
@@ -210,7 +209,6 @@ const App = (() => {
           `AED ${result.meta.count.toLocaleString()}개를 오프라인용으로 저장했습니다.`,
           "info"
         );
-        maybeShowInstallHint();
       } else if (result.status === "fresh") {
         OfflineView.setMeta(result.meta);
         if (firstRun) setStatus("");
@@ -231,35 +229,69 @@ const App = (() => {
     );
   }
 
+  /** 설치 안 한 사용자에게만 상단바 버튼을 보여준다. */
+  function refreshInstallButton() {
+    el("install-btn").hidden = isInstalled();
+  }
+
   /**
-   * 설치를 권하는 이유는 편의가 아니라 저장소 보존이다.
-   * iOS Safari는 7일간 미방문 시 서비스워커/IndexedDB를 지우는데, 홈 화면에 설치된
-   * 웹앱은 예외다. AED 앱은 "오래 안 씀"이 기본 상태라 이 차이가 크다.
+   * 설치 버튼 동작.
+   *
+   * 자동 설치는 Chromium 계열만 가능하다. iOS Safari에는 프로그램적 설치 API가
+   * 아예 없어서(beforeinstallprompt는 Chromium 전용) 안내 시트로 수동 절차를 보여준다.
+   * UA를 보고 나누지 않고 prompt 이벤트를 받아뒀는지로 나누는 이유는, 같은 iOS라도
+   * 브라우저가 바뀌거나 애플이 나중에 지원하면 자동으로 좋은 경로를 타게 하기 위해서다.
    */
-  function maybeShowInstallHint() {
-    if (isInstalled()) return;
-    try {
-      if (localStorage.getItem(INSTALL_HINT_KEY)) return;
-    } catch {
+  async function handleInstallClick() {
+    if (!deferredInstallPrompt) {
+      openInstallSheet();
       return;
     }
 
-    const hint = el("install-hint");
-    const button = el("install-btn");
-    el("install-text").textContent = deferredInstallPrompt
-      ? "홈 화면에 추가하면 오프라인에서도 확실히 동작합니다."
-      : "공유 → '홈 화면에 추가'를 누르면 오프라인에서도 확실히 동작합니다.";
-    button.hidden = !deferredInstallPrompt;
-    hint.hidden = false;
+    const prompt = deferredInstallPrompt;
+    // prompt 이벤트는 일회용이다. 다시 쓰면 예외가 나므로 먼저 비운다.
+    // 사용자가 거절해도 Chromium이 나중에 다시 발생시키면 아래 리스너가 재캡처한다.
+    deferredInstallPrompt = null;
+    try {
+      prompt.prompt();
+      const choice = await prompt.userChoice;
+      if (choice.outcome !== "accepted") {
+        // 거절한 경우 버튼은 그대로 둔다. 다음에 눌렀을 때는 안내 시트가 뜬다.
+        setStatus("설치를 취소했습니다. 언제든 다시 누를 수 있습니다.", "info");
+      }
+    } catch (error) {
+      console.warn("설치 프롬프트 실패 — 수동 안내로 대체합니다.", error);
+      openInstallSheet();
+    }
   }
 
-  function dismissInstallHint() {
-    el("install-hint").hidden = true;
-    try {
-      localStorage.setItem(INSTALL_HINT_KEY, "1");
-    } catch {
-      // 저장 못 해도 이번 세션에서는 닫힌다.
-    }
+  /**
+   * 수동 설치 안내. 브라우저마다 경로가 달라 문구만 갈라준다.
+   * (여기서만 UA를 본다 — 어떤 메뉴를 누르라고 알려주려면 방법이 없다.)
+   */
+  function openInstallSheet() {
+    const ua = navigator.userAgent;
+    const isIOS = /iPad|iPhone|iPod/.test(ua) ||
+      // iPadOS 13+는 데스크톱 Safari로 위장하므로 터치 지원으로 가려낸다.
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+    const steps = isIOS
+      ? [
+          '사파리 아래쪽의 공유 버튼<span class="sheet__key">￪</span>을 누릅니다.',
+          '메뉴를 내려 <span class="sheet__key">홈 화면에 추가</span>를 누릅니다.',
+          "오른쪽 위 <b>추가</b>를 누르면 끝입니다.",
+        ]
+      : [
+          '브라우저 메뉴<span class="sheet__key">⋮</span>를 엽니다.',
+          '<span class="sheet__key">앱 설치</span> 또는 <span class="sheet__key">홈 화면에 추가</span>를 누릅니다.',
+        ];
+
+    el("install-steps").innerHTML = steps.map((step) => `<li>${step}</li>`).join("");
+    el("install-sheet").hidden = false;
+  }
+
+  function closeInstallSheet() {
+    el("install-sheet").hidden = true;
   }
 
   function registerServiceWorker() {
@@ -283,18 +315,27 @@ const App = (() => {
 
     el("locate-btn").addEventListener("click", () => requestLocation({ center: true }));
     el("toggle-btn").addEventListener("click", toggleMode);
-    el("install-close").addEventListener("click", dismissInstallHint);
-    el("install-btn").addEventListener("click", async () => {
-      if (!deferredInstallPrompt) return;
-      deferredInstallPrompt.prompt();
-      deferredInstallPrompt = null;
-      dismissInstallHint();
+    el("install-btn").addEventListener("click", handleInstallClick);
+    el("install-sheet-close").addEventListener("click", closeInstallSheet);
+    // 배경을 눌러도 닫히게 한다 (시트 내부 클릭은 통과시키지 않는다).
+    el("install-sheet").addEventListener("click", (event) => {
+      if (event.target === el("install-sheet")) closeInstallSheet();
     });
 
     window.addEventListener("beforeinstallprompt", (event) => {
+      // 기본 미니 인포바를 막고 우리 버튼이 시점을 통제한다.
       event.preventDefault();
       deferredInstallPrompt = event;
     });
+
+    window.addEventListener("appinstalled", () => {
+      deferredInstallPrompt = null;
+      closeInstallSheet();
+      refreshInstallButton();
+      setStatus("홈 화면에 추가되었습니다.", "info");
+    });
+
+    refreshInstallButton();
 
     // 저장본을 먼저 띄운다. 네트워크를 기다리지 않으므로 오프라인에서도 즉시 화면이 나온다.
     const [storedRows, meta] = await Promise.all([DataStore.loadRows(), DataStore.getMeta()]);

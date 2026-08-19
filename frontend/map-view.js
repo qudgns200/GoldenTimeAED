@@ -16,6 +16,9 @@ const MapView = (() => {
   // 지도 이동이 멈춘 뒤 이 시간만큼 기다렸다가 다시 그린다.
   const DEBOUNCE_MS = 200;
 
+  // 하트 마커 한 변(px). 기본 핀보다 작아 밀집 지역에서도 지도가 덜 가려진다.
+  const MARKER_PX = 22;
+
   const SEOUL_CITY_HALL = { lat: 37.5665, lng: 126.978 };
   const DEFAULT_ZOOM = 15;
 
@@ -26,6 +29,24 @@ const MapView = (() => {
   let debounceTimer = null;
   let rows = [];
   let onStatus = () => {};
+
+  /**
+   * AED 마커 아이콘 — 빨간 하트.
+   *
+   * ImageIcon(url)을 쓰는 이유는 ui-util.js의 HEART_SVG_URL 주석 참고 —
+   * 한 화면에 400개까지 찍으므로 HtmlIcon(content)은 쓰지 않는다.
+   * 네이버가 아이콘 객체를 내부에서 보관하므로 공유하지 않고 매번 새로 만든다
+   * (문자열 URL은 재사용되므로 이미지 디코드는 한 번뿐이다).
+   */
+  function heartIcon() {
+    return {
+      url: UiUtil.HEART_SVG_URL,
+      size: new naver.maps.Size(MARKER_PX, MARKER_PX),
+      scaledSize: new naver.maps.Size(MARKER_PX, MARKER_PX),
+      // 핀이 아니라 심볼이므로 좌표에 중앙을 맞춘다.
+      anchor: new naver.maps.Point(MARKER_PX / 2, MARKER_PX / 2),
+    };
+  }
 
   function clearMarkers() {
     markers.forEach((m) => m.setMap(null));
@@ -47,6 +68,7 @@ const MapView = (() => {
         position: new naver.maps.LatLng(aed.lat, aed.lng),
         map,
         title: aed.org_name || "AED",
+        icon: heartIcon(),
       });
       naver.maps.Event.addListener(marker, "click", () => {
         infoWindow.setContent(UiUtil.detailHtml(aed));

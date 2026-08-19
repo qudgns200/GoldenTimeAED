@@ -31,9 +31,13 @@ GoldenTimeAED — AED 위치 지도 웹앱. 단계별(Phase) 진행 순서와 �
 
 **완료 기준**: Supabase 대시보드 SQL Editor 또는 REST API로 정책 동작 확인 완료.
 
-검증은 [`backend/scripts/verify_rls.py`](../backend/scripts/verify_rls.py)로 자동화되어 있다. anon INSERT는 `42501 new row violates row-level security policy`로 거부되는 것이 정상 동작이다.
+검증은 `backend/scripts/verify_rls.py`로 자동화했다. anon INSERT가 `42501 new row violates row-level security policy`로 거부되는 것이 정상 동작이었다.
 
-> 프리티어 프로젝트는 7일간 미사용 시 자동 일시중지(pause)되며, 이때 `<project-ref>.supabase.co` 서브도메인이 DNS에서 사라진다. 배치가 갑자기 실패하면 대시보드에서 프로젝트 상태부터 확인할 것.
+> **Phase 9에서 대체됨** — Supabase를 걷어내면서 이 단계의 산출물이 모두 삭제되었다:
+> `supabase/schema.sql`, `backend/scripts/verify_rls.py`, 그리고 `SUPABASE_*` 환경변수 3개.
+> 지금은 데이터베이스가 없고 `sync.py`가 API에서 받아 바로 정적 스냅샷을 만들어 커밋한다.
+> 프리티어 7일 미사용 자동 정지에 시달릴 이유도 함께 사라졌다(그게 제거 이유 중 하나였다).
+> **이 절은 기록으로만 남긴다 — 지금 따라 할 절차가 아니다.**
 
 ## Phase 3 — Python ETL 스크립트
 

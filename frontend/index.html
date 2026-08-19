@@ -17,6 +17,8 @@
   <header class="topbar">
     <h1>GoldenTimeAED</h1>
     <div class="topbar__actions">
+      <!-- 설치되지 않은 상태에서만 노출된다. iOS는 자동 설치 API가 없어 안내 시트를 띄운다. -->
+      <button id="install-btn" type="button" hidden>설치</button>
       <button id="toggle-btn" type="button" hidden>목록</button>
       <button id="locate-btn" type="button">내 위치</button>
     </div>
@@ -40,11 +42,18 @@
 
   <div id="status" class="status" role="status" aria-live="polite"></div>
 
-  <!-- 설치를 권하는 이유는 편의가 아니라 저장소 보존이다 (app.js maybeShowInstallHint 주석 참고) -->
-  <div id="install-hint" class="install-hint" hidden>
-    <p id="install-text"></p>
-    <button id="install-btn" class="install-hint__cta" type="button" hidden>설치</button>
-    <button id="install-close" class="install-hint__close" type="button" aria-label="닫기">×</button>
+  <!-- iOS처럼 자동 설치를 지원하지 않는 브라우저에서 뜨는 수동 안내.
+       설치를 권하는 이유는 편의가 아니라 저장소 보존이다 (docs/OFFLINE_DESIGN.md). -->
+  <div id="install-sheet" class="sheet" hidden>
+    <div class="sheet__box" role="dialog" aria-modal="true" aria-labelledby="install-sheet-title">
+      <h2 id="install-sheet-title" class="sheet__title">홈 화면에 추가하기</h2>
+      <p class="sheet__why">
+        평소 안 쓰는 앱이라 브라우저가 저장된 AED 데이터를 지울 수 있습니다.
+        홈 화면에 추가하면 오프라인에서도 확실히 동작합니다.
+      </p>
+      <ol id="install-steps" class="sheet__steps"></ol>
+      <button id="install-sheet-close" class="sheet__close" type="button">닫기</button>
+    </div>
   </div>
 
   <script src="config.js"></script>
