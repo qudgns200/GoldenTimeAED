@@ -270,12 +270,7 @@ const App = (() => {
    * (여기서만 UA를 본다 — 어떤 메뉴를 누르라고 알려주려면 방법이 없다.)
    */
   function openInstallSheet() {
-    const ua = navigator.userAgent;
-    const isIOS = /iPad|iPhone|iPod/.test(ua) ||
-      // iPadOS 13+는 데스크톱 Safari로 위장하므로 터치 지원으로 가려낸다.
-      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-
-    const steps = isIOS
+    const steps = UiUtil.isIOS()
       ? [
           '사파리 아래쪽의 공유 버튼<span class="sheet__key">￪</span>을 누릅니다.',
           '메뉴를 내려 <span class="sheet__key">홈 화면에 추가</span>를 누릅니다.',

@@ -31,16 +31,39 @@ const UiUtil = (() => {
       </div>`;
   }
 
+  /** iPadOS 13+는 데스크톱 Safari로 위장하므로 터치 지원 여부로 가려낸다. */
+  function isIOS() {
+    return (
+      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+    );
+  }
+
+  function isAndroid() {
+    return /Android/.test(navigator.userAgent);
+  }
+
   /**
    * 외부 지도 앱으로 좌표를 넘기는 링크.
    *
    * 오프라인이어도 사용자가 그 앱에 오프라인 지도를 받아뒀다면 열린다.
    * 우리가 보장할 수 없는 조건이라 "되면 좋은" 보조 수단으로만 제공한다.
-   * geo: 스킴은 안드로이드/일부 데스크톱에서 기본 지도 앱을 연다.
+   *
+   * 플랫폼마다 받아주는 형식이 다르다. 하나로 통일할 수 없다:
+   *   iOS      geo: 스킴을 아예 등록하지 않아 Safari가 "주소가 유효하지 않습니다"를 낸다.
+   *            애플이 문서화한 maps.apple.com 링크를 쓰면 Maps 앱이 열린다.
+   *   안드로이드 geo:가 표준이고, 설치된 지도 앱 중에서 고르는 창이 뜬다.
+   *   데스크톱   지도 앱이 없으므로 웹 지도로 보낸다.
    */
   function externalMapUrl(aed) {
     const label = encodeURIComponent(aed.org_name || "AED");
-    return `geo:${aed.lat},${aed.lng}?q=${aed.lat},${aed.lng}(${label})`;
+    if (isIOS()) {
+      return `https://maps.apple.com/?ll=${aed.lat},${aed.lng}&q=${label}`;
+    }
+    if (isAndroid()) {
+      return `geo:${aed.lat},${aed.lng}?q=${aed.lat},${aed.lng}(${label})`;
+    }
+    return `https://www.google.com/maps/search/?api=1&query=${aed.lat},${aed.lng}`;
   }
 
   /* ------------------------------------------------------------------ 하트 도형
@@ -97,7 +120,7 @@ const UiUtil = (() => {
   }
 
   return {
-    escapeHtml, detailHtml, externalMapUrl, formatUpdatedAt,
+    escapeHtml, detailHtml, externalMapUrl, formatUpdatedAt, isIOS, isAndroid,
     HEART_COLOR, HEART_SVG_URL, heartPath,
   };
 })();
