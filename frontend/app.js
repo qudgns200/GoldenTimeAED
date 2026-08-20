@@ -16,6 +16,30 @@ const App = (() => {
 
   const LAST_POSITION_KEY = "goldentime.lastPosition";
 
+  /*
+   * 측위 파라미터 — "내 위치가 바로 안 잡힌다"의 정체.
+   *
+   * enableHighAccuracy:true 하나만 쓰면 브라우저는 GPS 칩이 위성을 잡을 때까지
+   * 기다린다. 실내나 콜드 스타트에서는 10~30초가 예사고, 그동안 화면에는 아무
+   * 위치도 찍히지 않는다. 그래서 두 단계로 나눈다.
+   *
+   *   1) 대략 측위(기지국·Wi-Fi) — 보통 1초 안에 온다. 오차 수백 m지만
+   *      "지금 화면을 어디에 놓을지"를 정하기에는 충분하다.
+   *   2) 정밀 측위(GPS) — 뒤에서 watch로 돌리며 좌표를 조여간다.
+   *
+   * 둘을 동시에 쏴서 먼저 오는 쪽으로 화면을 띄우고, 더 정확한 값이 오면 갈아끼운다.
+   * 권한 프롬프트는 둘이 공유하므로 사용자에게 두 번 뜨지 않는다.
+   */
+  const COARSE_OPTIONS = { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 };
+  const FINE_OPTIONS = { enableHighAccuracy: true, timeout: 25000, maximumAge: 0 };
+  // 이만큼 정확해지면 목적을 달성했다고 보고 watch를 끊는다 (m).
+  const GOOD_ACCURACY_M = 40;
+  // 정밀 측위를 붙잡고 있을 최대 시간. 계속 켜두면 배터리를 먹는다.
+  const REFINE_BUDGET_MS = 30000;
+  // 정밀화된 좌표가 이만큼 어긋났을 때만 지도를 다시 옮긴다 (m).
+  // 매 갱신마다 옮기면 사용자가 지도를 만지는 중에 화면이 튄다.
+  const RECENTER_THRESHOLD_M = 120;
+
   let rows = [];
   let mode = "offline"; // "map" | "offline"
   let mapAvailable = false;
@@ -25,6 +49,10 @@ const App = (() => {
   let gpsPos = null;       // 마지막 GPS 측위값 — 검색을 지웠을 때 복귀 대상
   let posSource = "gps";   // 지금 기준점을 무엇으로 잡았는지 ("gps" | "search")
   let syncing = false;
+  let watchId = null;      // 정밀 측위 watch 핸들
+  let refineTimer = null;  // 정밀 측위 제한 시간
+  let attempt = null;      // 진행 중인 측위 시도 (아래 requestLocation 참고)
+  let lastFixAt = 0;       // 마지막으로 실제 측위에 성공한 시각
 
   const el = (id) => document.getElementById(id);
 
@@ -101,31 +129,130 @@ const App = (() => {
     Search.setOrigin(lat, lng);
   }
 
-  function requestLocation({ center }) {
+  function stopRefining() {
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+    }
+    clearTimeout(refineTimer);
+    refineTimer = null;
+  }
+
+  /** 시도를 닫는다. 여기서 attempt를 비우지 않으면 다음 '내 위치'가 먹히지 않는다. */
+  function finishAttempt() {
+    stopRefining();
+    attempt = null;
+  }
+
+  /** 두 단계 중 하나가 좌표를 들고 왔다. 더 정확한 값만 채택한다. */
+  function acceptFix(position) {
+    if (!attempt) return;
+    const { latitude: lat, longitude: lng } = position.coords;
+    const accuracy =
+      typeof position.coords.accuracy === "number" ? position.coords.accuracy : Infinity;
+
+    // 대략 측위와 정밀 측위가 뒤섞여 도착하므로, 이미 더 좋은 값을 받았으면 무시한다.
+    if (attempt.bestAccuracy !== null && accuracy > attempt.bestAccuracy) return;
+    attempt.bestAccuracy = accuracy;
+    lastFixAt = Date.now();
+
+    // 첫 좌표에서는 무조건 옮기고, 이후에는 눈에 띄게 어긋났을 때만 옮긴다.
+    const centeredAt = attempt.centeredAt;
+    const center =
+      attempt.center &&
+      (!centeredAt ||
+        Geo.distanceMeters(centeredAt.lat, centeredAt.lng, lat, lng) > RECENTER_THRESHOLD_M);
+    if (center) attempt.centeredAt = { lat, lng };
+
+    applyPosition(lat, lng, { center });
+    // 지도 모드라면 곧 render()가 건수를 다시 써준다. 목록 모드에서는
+    // 여기서 지우지 않으면 "확인하는 중…"이 화면에 계속 남는다.
+    if (attempt.notify) setStatus("");
+
+    if (accuracy <= GOOD_ACCURACY_M) finishAttempt();
+  }
+
+  /**
+   * 한쪽 단계가 실패했다. 다른 쪽이 아직 살아 있거나 이미 좌표를 받았으면 조용히 넘긴다.
+   * 둘 다 실패했을 때만 사용자에게 이유를 알린다.
+   */
+  function handleFixError(error) {
+    if (!attempt) return;
+    attempt.pending -= 1;
+    if (error.code === error.PERMISSION_DENIED) {
+      // 권한이 없으면 나머지 한쪽도 같은 이유로 실패한다. 기다릴 필요가 없다.
+      attempt.denied = true;
+      attempt.pending = 0;
+    }
+    if (attempt.pending > 0) return;
+
+    // 권한을 못 받아도 마지막 위치가 있으면 목록은 여전히 쓸모가 있다.
+    if (attempt.bestAccuracy === null && attempt.notify) {
+      setStatus(
+        attempt.denied
+          ? "위치 권한이 거부되었습니다. 주소창의 자물쇠 또는 휴대폰 설정에서 위치 접근을 허용해주세요."
+          : "현재 위치를 가져오지 못했습니다. 실내라면 창가나 야외에서 다시 눌러주세요.",
+        "error"
+      );
+    }
+    finishAttempt();
+  }
+
+  /**
+   * 현재 위치를 잡는다.
+   *
+   * center: 잡히면 지도를 그 위로 옮길지. notify: 진행 상황을 상태줄에 쓸지
+   * (부팅 때는 데이터 다운로드 안내와 겹치므로 끈다).
+   */
+  function requestLocation({ center, notify = center }) {
     if (!navigator.geolocation) {
       setStatus("이 브라우저는 위치 기능을 지원하지 않습니다.", "error");
       return;
     }
-    if (center) setStatus("현재 위치를 확인하는 중…", "info");
 
+    // 이미 측위 중이면 새로 쏘지 않고 진행 중인 시도의 목표만 올린다.
+    // (부팅 직후 지도 로드가 끝나 다시 요청하는 경우가 여기 걸린다.)
+    if (attempt) {
+      attempt.center = attempt.center || center;
+      attempt.notify = attempt.notify || notify;
+      // 다음 좌표에서 반드시 한 번 옮기게 한다. 사용자가 지도를 옮겨놓고
+      // '내 위치'를 누른 경우 이걸 비우지 않으면 화면이 그대로 있는다.
+      if (center) attempt.centeredAt = null;
+      if (notify && attempt.bestAccuracy === null) setStatus("현재 위치를 확인하는 중…", "info");
+      return;
+    }
+
+    stopRefining();
+    attempt = {
+      center,
+      notify,
+      pending: 2,          // 대략 측위 + 정밀 측위
+      bestAccuracy: null,  // 지금까지 채택한 좌표의 오차(m)
+      centeredAt: null,    // 마지막으로 지도를 옮긴 좌표
+      denied: false,
+    };
+    if (notify) setStatus("현재 위치를 확인하는 중…", "info");
+
+    // 1단계 — 기지국·Wi-Fi 기반. 화면에 뭐라도 빨리 띄우는 게 목적이다.
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        applyPosition(position.coords.latitude, position.coords.longitude, { center });
-        // 지도 모드라면 곧 render()가 건수를 다시 써준다. 목록 모드에서는
-        // 여기서 지우지 않으면 "확인하는 중…"이 화면에 계속 남는다.
-        if (center) setStatus("");
+        if (attempt) attempt.pending -= 1;
+        acceptFix(position);
       },
-      (error) => {
-        const reason =
-          error.code === error.PERMISSION_DENIED
-            ? "위치 권한이 거부되었습니다."
-            : "현재 위치를 가져오지 못했습니다.";
-        // 권한을 못 받아도 마지막 위치가 있으면 목록은 여전히 쓸모가 있다.
-        if (center) setStatus(reason, "error");
-      },
-      // GPS는 네트워크 없이도 동작하지만 첫 측위는 오래 걸릴 수 있다.
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+      handleFixError,
+      COARSE_OPTIONS
     );
+
+    // 2단계 — GPS. watch로 받아 좌표가 조여질 때마다 갱신한다.
+    watchId = navigator.geolocation.watchPosition(acceptFix, handleFixError, FINE_OPTIONS);
+
+    refineTimer = setTimeout(() => {
+      // 시간이 다 됐다. 지금까지 받은 값이 있으면 그걸로 충분하다고 본다.
+      if (attempt && attempt.bestAccuracy === null && attempt.notify) {
+        setStatus("현재 위치를 가져오지 못했습니다. 잠시 후 다시 눌러주세요.", "error");
+      }
+      finishAttempt();
+    }, REFINE_BUDGET_MS);
   }
 
   /* ------------------------------------------------------------ 지도 스크립트 */
@@ -183,14 +310,20 @@ const App = (() => {
       }
       mapAvailable = true;
       applyMode("map");
-      // 이미 기준점이 있으면 다시 측위하지 않고 그 값을 지도에 얹는다.
+      // 지도는 부팅 뒤에 늦게 뜬다. 그 사이에 잡힌 기준점이 있으면 그 위에서
+      // 시작한다 — 여기서 center를 끄면 사용자가 '내 위치'를 누를 때까지
+      // 지도가 서울시청에 머물러 "위치가 안 잡힌다"로 보인다.
       if (currentPos) {
         MapView.setMyLocation(currentPos.lat, currentPos.lng, {
-          center: false,
+          center: true,
           source: posSource,
         });
-      } else {
-        requestLocation({ center: false });
+      }
+      // 측위가 진행 중이면 requestLocation이 그 시도에 center만 켜준다.
+      // 방금 잡은 좌표가 있으면(위에서 이미 그 위에 지도를 놓았다) 다시 쏘지 않는다.
+      const stale = Date.now() - lastFixAt > 60000;
+      if (posSource !== "search" && (attempt || stale)) {
+        requestLocation({ center: true, notify: false });
       }
     };
 
@@ -352,6 +485,9 @@ const App = (() => {
       // 검색 기준점을 버리고 새로 측위한다. Search.reset()을 쓰면 onClear가
       // 저장된 GPS 좌표로 되돌려버려 "새로 위치를 잡는다"는 기대와 어긋난다.
       Search.clearInput();
+      // 새 좌표는 몇 초 뒤에 온다. 이미 아는 위치가 있으면 먼저 그리로 옮겨
+      // 버튼이 즉시 반응하게 한다. 갱신되면 그 위에서 미세하게 움직일 뿐이다.
+      if (gpsPos) applyPosition(gpsPos.lat, gpsPos.lng, { center: true, source: "gps" });
       requestLocation({ center: true });
     });
     el("toggle-btn").addEventListener("click", toggleMode);
@@ -377,6 +513,11 @@ const App = (() => {
 
     refreshInstallButton();
 
+    // 측위를 가장 먼저 쏜다. 아래 IndexedDB 읽기는 스냅샷이 10MB라 모바일에서
+    // 1~2초가 걸리는데, 그동안 권한 프롬프트조차 뜨지 않으면 첫 좌표가 그만큼
+    // 늦어진다. 측위는 화면 준비 상태와 무관하게 진행할 수 있다.
+    requestLocation({ center: true, notify: false });
+
     // 저장본을 먼저 띄운다. 네트워크를 기다리지 않으므로 오프라인에서도 즉시 화면이 나온다.
     const [storedRows, meta] = await Promise.all([DataStore.loadRows(), DataStore.getMeta()]);
     rows = storedRows;
@@ -385,12 +526,14 @@ const App = (() => {
     Search.setRows(rows);
 
     // 위치 권한을 아직 못 받았어도 마지막 위치가 있으면 목록을 정렬해 보여줄 수 있다.
-    const last = lastKnownPosition();
-    if (last) applyPosition(last.lat, last.lng, { center: false, source: "gps" });
+    // 이미 측위가 끝났으면(위에서 먼저 쏜다) 그 좌표를 오래된 값으로 덮지 않는다.
+    if (!currentPos) {
+      const last = lastKnownPosition();
+      if (last) applyPosition(last.lat, last.lng, { center: true, source: "gps" });
+    }
 
     applyMode("offline");
     loadMapScript();
-    requestLocation({ center: false });
 
     registerServiceWorker();
     syncInBackground();
