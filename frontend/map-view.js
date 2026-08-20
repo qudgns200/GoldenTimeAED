@@ -138,17 +138,26 @@ const MapView = (() => {
     scheduleRender();
   }
 
-  function setMyLocation(lat, lng, { center = true } = {}) {
+  /**
+   * 지도의 기준점을 옮긴다.
+   *
+   * source가 "search"면 검색으로 찍은 지점이므로 **파란 "내 위치" 마커를 쓰지 않는다.**
+   * 내가 있지도 않은 곳을 "내 위치"라고 표시하면 사용자를 속이는 것이다.
+   */
+  function setMyLocation(lat, lng, { center = true, source = "gps" } = {}) {
     if (!map) return;
     const here = new naver.maps.LatLng(lat, lng);
+    const isSearch = source === "search";
 
     if (myLocationMarker) myLocationMarker.setMap(null);
     myLocationMarker = new naver.maps.Marker({
       position: here,
       map,
-      title: "내 위치",
+      title: isSearch ? "검색 위치" : "내 위치",
       icon: {
-        content: '<div class="me-dot" aria-label="내 위치"></div>',
+        content: isSearch
+          ? '<div class="search-dot" aria-label="검색 위치"></div>'
+          : '<div class="me-dot" aria-label="내 위치"></div>',
         anchor: new naver.maps.Point(9, 9),
       },
       zIndex: 1000,

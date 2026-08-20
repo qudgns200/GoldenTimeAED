@@ -21,7 +21,9 @@ const App = (() => {
   let mapAvailable = false;
   let mapScriptTried = false;
   let deferredInstallPrompt = null;
-  let currentPos = null;
+  let currentPos = null;   // 지금 화면 기준점 (GPS 또는 검색)
+  let gpsPos = null;       // 마지막 GPS 측위값 — 검색을 지웠을 때 복귀 대상
+  let posSource = "gps";   // 지금 기준점을 무엇으로 잡았는지 ("gps" | "search")
   let syncing = false;
 
   const el = (id) => document.getElementById(id);
@@ -79,11 +81,24 @@ const App = (() => {
     }
   }
 
-  function applyPosition(lat, lng, { center }) {
+  /**
+   * 화면 기준점을 옮긴다.
+   *
+   * source는 "gps" 또는 "search"다. 두 뷰가 이 값에 따라 중앙 표시를 달리 그린다 —
+   * 검색으로 찍은 지점을 파란 "내 위치"로 보여주면 사용자를 속이는 것이다.
+   * GPS 좌표만 gpsPos에 따로 남겨, 검색을 지웠을 때 원래 위치로 돌아갈 수 있게 한다.
+   */
+  function applyPosition(lat, lng, { center, source = "gps" }) {
     currentPos = { lat, lng };
-    rememberPosition(lat, lng);
-    OfflineView.setMyLocation(lat, lng);
-    if (mapAvailable) MapView.setMyLocation(lat, lng, { center });
+    posSource = source;
+    if (source === "gps") {
+      gpsPos = { lat, lng };
+      rememberPosition(lat, lng);
+    }
+    OfflineView.setMyLocation(lat, lng, source);
+    if (mapAvailable) MapView.setMyLocation(lat, lng, { center, source });
+    // 검색 결과도 이 지점 기준 거리순으로 정렬되게 한다.
+    Search.setOrigin(lat, lng);
   }
 
   function requestLocation({ center }) {
@@ -168,9 +183,15 @@ const App = (() => {
       }
       mapAvailable = true;
       applyMode("map");
-      // 이미 측위가 끝났다면 다시 요청하지 않고 그 값을 지도에 얹는다.
-      if (currentPos) MapView.setMyLocation(currentPos.lat, currentPos.lng, { center: false });
-      else requestLocation({ center: false });
+      // 이미 기준점이 있으면 다시 측위하지 않고 그 값을 지도에 얹는다.
+      if (currentPos) {
+        MapView.setMyLocation(currentPos.lat, currentPos.lng, {
+          center: false,
+          source: posSource,
+        });
+      } else {
+        requestLocation({ center: false });
+      }
     };
 
     // 오프라인이면 여기로 온다. 예전에는 전체 화면 오버레이로 앱을 막던 지점이다.
@@ -204,6 +225,7 @@ const App = (() => {
         rows = result.rows;
         MapView.setRows(rows);
         OfflineView.setRows(rows);
+        Search.setRows(rows);
         OfflineView.setMeta(result.meta);
         setStatus(
           `AED ${result.meta.count.toLocaleString()}개를 오프라인용으로 저장했습니다.`,
@@ -308,7 +330,30 @@ const App = (() => {
       compassBtnId: "compass-btn",
     });
 
-    el("locate-btn").addEventListener("click", () => requestLocation({ center: true }));
+    Search.init({
+      inputId: "search-input",
+      clearId: "search-clear",
+      resultsId: "search-results",
+      onPick: (row) => {
+        // 검색 지점을 기준으로 삼는다. source가 "search"라서 두 뷰가 파란
+        // "내 위치"가 아닌 별도 표시로 그린다.
+        applyPosition(row.lat, row.lng, { center: true, source: "search" });
+        if (mode === "map") setStatus("");
+      },
+      onClear: () => {
+        // 검색을 지우면 GPS 위치로 돌아간다. 없으면 다시 측위를 시도한다 —
+        // 기준점이 없는 빈 화면으로 떨어지지 않게 한다.
+        if (gpsPos) applyPosition(gpsPos.lat, gpsPos.lng, { center: true, source: "gps" });
+        else requestLocation({ center: true });
+      },
+    });
+
+    el("locate-btn").addEventListener("click", () => {
+      // 검색 기준점을 버리고 새로 측위한다. Search.reset()을 쓰면 onClear가
+      // 저장된 GPS 좌표로 되돌려버려 "새로 위치를 잡는다"는 기대와 어긋난다.
+      Search.clearInput();
+      requestLocation({ center: true });
+    });
     el("toggle-btn").addEventListener("click", toggleMode);
     el("install-btn").addEventListener("click", handleInstallClick);
     el("install-sheet-close").addEventListener("click", closeInstallSheet);
@@ -337,10 +382,11 @@ const App = (() => {
     rows = storedRows;
     OfflineView.setRows(rows);
     OfflineView.setMeta(meta);
+    Search.setRows(rows);
 
     // 위치 권한을 아직 못 받았어도 마지막 위치가 있으면 목록을 정렬해 보여줄 수 있다.
     const last = lastKnownPosition();
-    if (last) OfflineView.setMyLocation(last.lat, last.lng);
+    if (last) applyPosition(last.lat, last.lng, { center: false, source: "gps" });
 
     applyMode("offline");
     loadMapScript();

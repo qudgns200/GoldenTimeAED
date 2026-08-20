@@ -14,20 +14,21 @@ const UiUtil = (() => {
   /**
    * AED 상세 정보 HTML. 지도의 정보창과 오프라인 목록의 상세가 같은 내용을 보여준다.
    *
-   * 전화번호는 원본에서 일부 마스킹되어 온다(예: 02-******). 걸 수 없으므로 링크로 만들지 않는다.
+   * 관리자 전화번호(`aed.phone`)는 일부러 표시하지 않는다. 공공데이터포털이 개인정보
+   * 보호로 가려서 보내기 때문에 걸 수 있는 번호가 아니다 — 스냅샷 61,717건 중 99.9%가
+   * `02-******` 형태이고 나머지도 `055` 같은 조각뿐이다(docs/API_SPEC.md).
+   * 우리가 마스킹하는 것이 아니므로 코드로 되살릴 방법이 없다. 되돌리지 말 것.
    */
   function detailHtml(aed) {
     const name = escapeHtml(aed.org_name) || "이름 미상";
     const place = escapeHtml(aed.install_place);
     const address = escapeHtml(aed.address_road);
-    const phone = escapeHtml(aed.phone);
 
     return `
       <div class="iw">
         <h3 class="iw__title">${name}</h3>
         ${place ? `<p class="iw__row"><span>설치위치</span>${place}</p>` : ""}
         ${address ? `<p class="iw__row"><span>주소</span>${address}</p>` : ""}
-        ${phone ? `<p class="iw__row"><span>관리자</span>${phone}</p>` : ""}
       </div>`;
   }
 

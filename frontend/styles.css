@@ -1,5 +1,7 @@
 :root {
   --topbar-h: 52px;
+  /* 검색 행 높이. #map / .offline 높이 계산에 함께 들어간다 — 빼먹으면 하단이 잘린다. */
+  --search-h: 48px;
   --accent: #d92d20;
   --text: #101828;
   --muted: #667085;
@@ -52,9 +54,115 @@ html, body {
 .topbar__actions button:hover { background: #f9fafb; }
 .topbar__actions button:active { transform: translateY(1px); }
 
+/* ------------------------------------------------------------------- 검색
+   기기에 저장된 데이터만 훑으므로 오프라인에서도 동작한다 (search.js).
+   지도·목록 두 뷰 위에 공통으로 놓인다. */
+
+.search {
+  position: relative;
+  height: var(--search-h);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: #fff;
+}
+
+.search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f9fafb;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.search input:focus {
+  outline: none;
+  border-color: var(--muted);
+  background: #fff;
+}
+
+#search-clear {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#search-clear:hover { background: #f2f4f7; }
+
+/* 후보 목록은 지도 위에 겹쳐 띄운다. 상태 표시줄(z-index 100)보다는 아래. */
+.search__results {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: calc(var(--search-h) - 4px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: min(52vh, 380px);
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.16);
+  z-index: 90;
+}
+
+/* position:absolute가 브라우저 기본 [hidden] { display:none }을 무력화한다.
+   명시적으로 되돌린다 (.offline, .sheet도 같은 이유). */
+.search__results[hidden] { display: none; }
+
+.search__item {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.search__item:last-child { border-bottom: 0; }
+.search__item:hover { background: #f9fafb; }
+
+.search__name {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search__addr {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search__empty {
+  padding: 14px 12px;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+
 #map {
   width: 100%;
-  height: calc(100% - var(--topbar-h));
+  height: calc(100% - var(--topbar-h) - var(--search-h));
 }
 
 /* 하단 상태 표시줄 — 조회 건수/경고/오류 */
@@ -128,12 +236,23 @@ html, body {
   box-shadow: 0 0 0 2px rgba(21, 112, 239, 0.35);
 }
 
+/* 검색으로 찍은 기준점. 내 위치(꽉 찬 파란 점)와 반드시 달라 보여야 한다 —
+   내가 있지도 않은 곳을 "내 위치"로 표시하면 사용자를 속이는 것이다. */
+.search-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 4px solid var(--muted);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
+}
+
 /* ------------------------------------------------------------------ 오프라인 뷰
    지도 타일 없이 동작하는 대체 화면. 상단은 Canvas 간이 지도, 하단은 거리순 목록.
    왜 지도가 아닌지는 docs/OFFLINE_DESIGN.md 참고. */
 
 .offline {
-  height: calc(100% - var(--topbar-h));
+  height: calc(100% - var(--topbar-h) - var(--search-h));
   display: flex;
   flex-direction: column;
   background: #fff;

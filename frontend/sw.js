@@ -20,6 +20,7 @@ const SHELL = [
   "styles.css",
   "ui-util.js",
   "geo.js",
+  "search.js",
   "data-store.js",
   "sync-data.js",
   "map-view.js",

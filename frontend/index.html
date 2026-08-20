@@ -24,6 +24,15 @@
     </div>
   </header>
 
+  <!-- 기기에 저장된 데이터만 훑으므로 오프라인에서도 검색된다 (search.js).
+       PC는 GPS가 없어 위치 추정이 부정확하거나 거부되기 쉬운데, 그때 이게 유일한 진입 경로다. -->
+  <div class="search">
+    <input id="search-input" type="search" placeholder="기관명 또는 주소 검색"
+           autocomplete="off" aria-label="기관명 또는 주소 검색">
+    <button id="search-clear" type="button" aria-label="검색어 지우기" hidden>×</button>
+    <ul id="search-results" class="search__results" role="listbox" hidden></ul>
+  </div>
+
   <!-- 온라인 전용. 네이버 지도는 타일을 매번 서버에서 받으므로 오프라인에서는 비운다. -->
   <div id="map" hidden></div>
 
@@ -59,6 +68,7 @@
   <script src="config.js"></script>
   <script src="ui-util.js"></script>
   <script src="geo.js"></script>
+  <script src="search.js"></script>
   <script src="data-store.js"></script>
   <script src="sync-data.js"></script>
   <script src="map-view.js"></script>

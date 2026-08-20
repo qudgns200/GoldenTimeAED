@@ -60,6 +60,7 @@ const OfflineView = (() => {
   let meta = null;
   let myPos = null; // { lat, lng }
   let heading = null; // 도(북=0). null이면 나침반 미사용 → 북쪽 고정
+  let posSource = "gps"; // "gps" | "search" — 중앙 기준점을 어떻게 잡았는지
   let scaleIndex = DEFAULT_SCALE_INDEX;
   let offline = true;
   let visible = false;
@@ -283,8 +284,25 @@ const OfflineView = (() => {
     ctx.fillText(String(rank), x, y + 0.5);
   }
 
-  /** 나침반이 켜져 있으면 진행 방향을 나타내는 삼각형, 아니면 방향 없는 원. */
+  /**
+   * 화면 중앙의 기준점.
+   *
+   * 검색으로 찍은 지점이면 **속이 빈 회색 링**으로 그린다. 내가 있지도 않은 곳을
+   * 꽉 찬 파란 점("내 위치")으로 표시하면 사용자를 속이는 것이다.
+   * GPS일 때는 나침반이 켜져 있으면 진행 방향 삼각형, 아니면 방향 없는 원.
+   */
   function drawMe(cx, cy) {
+    if (posSource === "search") {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff";
+      ctx.fill();
+      ctx.strokeStyle = COLORS.ringText;
+      ctx.lineWidth = 3.5;
+      ctx.stroke();
+      return;
+    }
+
     if (heading === null) {
       ctx.beginPath();
       ctx.arc(cx, cy, 7, 0, Math.PI * 2);
@@ -332,7 +350,10 @@ const OfflineView = (() => {
     }
     if (!myPos) {
       listEl.innerHTML =
-        '<p class="offline-empty">위치 권한을 허용하면 가까운 순으로 정렬됩니다.</p>';
+        // PC는 GPS가 없어 위치를 못 잡는 경우가 흔하다. 그때 검색이 유일한 진입 경로라
+        // 여기서 알려줘야 한다 — 안 그러면 화면이 비어 있는 채로 끝난다.
+        '<p class="offline-empty">위치 권한을 허용하면 가까운 순으로 정렬됩니다.<br>' +
+        "위치를 쓸 수 없으면 위쪽 검색창에 기관명이나 주소를 입력해보세요.</p>";
       listItems = [];
       return;
     }
@@ -534,8 +555,9 @@ const OfflineView = (() => {
     renderBanner();
   }
 
-  function setMyLocation(lat, lng) {
-    myPos = { lat, lng };
+  function setMyLocation(lat, lng, source = "gps") {
+    myPos = lat === null || lng === null ? null : { lat, lng };
+    posSource = source;
     renderList();
     scheduleDraw();
   }
